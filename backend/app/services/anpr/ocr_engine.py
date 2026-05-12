@@ -1,13 +1,15 @@
-"""OCR preprocessing (grayscale, denoise, CLAHE, resize) + EasyOCR for Indian-style plates."""
+"""Plate crop preprocessing + PaddleOCR (primary) with EasyOCR fallback for Indian-style plates."""
 
 from __future__ import annotations
 
 import logging
 import os
 import re
-import numpy as np
 from collections import defaultdict
 
+import numpy as np
+
+from app.services.anpr.paddle_reader import paddle_read_lines
 from app.utils.plates import looks_like_plate, normalize_plate, refine_indian_plate_ocr
 
 logger = logging.getLogger(__name__)
@@ -19,15 +21,49 @@ _INDIAN_LOOSE = re.compile(r"^[A-Z]{2}\d{1,2}[A-Z]{0,3}\d{2,4}[A-Z0-9]{0,4}$")
 _easy_reader = None
 
 
-def _get_reader():
+def _get_easy_reader():
     global _easy_reader
     if _easy_reader is not None:
         return _easy_reader
     import easyocr
 
-    # Latin script on Indian plates (e.g. MH12AB1234); pattern scoring prefers Indian layouts.
     _easy_reader = easyocr.Reader(["en"], gpu=False, verbose=False)
     return _easy_reader
+
+
+def _ocr_engine_mode() -> str:
+    return os.environ.get("ANPR_OCR_ENGINE", "auto").strip().lower()
+
+
+def _easy_read_lines(img: np.ndarray, *, allowlist: str) -> list[tuple[str, float]]:
+    reader = _get_easy_reader()
+    out: list[tuple[str, float]] = []
+    for bbox, text, conf in reader.readtext(
+        img,
+        detail=1,
+        paragraph=False,
+        allowlist=allowlist,
+    ):
+        out.append((str(text), float(conf)))
+    return out
+
+
+def _read_lines_from_image(img: np.ndarray, *, allowlist: str) -> list[tuple[str, float]]:
+    """``easy``: EasyOCR only. ``paddle``: Paddle only. ``auto`` (default): Paddle then EasyOCR fallback."""
+    mode = _ocr_engine_mode()
+    if mode == "easy":
+        return _easy_read_lines(img, allowlist=allowlist)
+    if mode == "paddle":
+        return paddle_read_lines(img)
+    lines = paddle_read_lines(img)
+    if lines:
+        return lines
+    logger.info("PaddleOCR returned no lines; trying EasyOCR fallback.")
+    try:
+        return _easy_read_lines(img, allowlist=allowlist)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("EasyOCR fallback failed: %s", e)
+        return []
 
 
 def _deskew_gray(gray: np.ndarray) -> np.ndarray:
@@ -76,7 +112,6 @@ def preprocess_for_ocr(bgr_crop: np.ndarray) -> tuple[np.ndarray, str]:
     gray = cv2.bilateralFilter(gray, d=7, sigmaColor=55, sigmaSpace=55)
     clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8))
     gray = clahe.apply(gray)
-    # Unsharp mask on grayscale
     blur = cv2.GaussianBlur(gray, (0, 0), sigmaX=1.2)
     gray = cv2.addWeighted(gray, 1.35, blur, -0.35, 0)
 
@@ -138,16 +173,7 @@ def read_texts_from_gray(
     *,
     allowlist: str = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
 ) -> list[tuple[str, float]]:
-    reader = _get_reader()
-    out: list[tuple[str, float]] = []
-    for bbox, text, conf in reader.readtext(
-        gray,
-        detail=1,
-        paragraph=False,
-        allowlist=allowlist,
-    ):
-        out.append((str(text), float(conf)))
-    return out
+    return _read_lines_from_image(gray, allowlist=allowlist)
 
 
 def read_plate_from_crops(
@@ -159,10 +185,8 @@ def read_plate_from_crops(
     OCR each crop; pick best by (Indian pattern score, OCR conf, detection conf).
     Returns (plate_text, ocr_confidence, candidates, preprocessing_note).
     """
-    reader = _get_reader()
-    all_reads: list[tuple[str, float, float, str]] = []  # norm, ocr_conf, det_conf, note
+    all_reads: list[tuple[str, float, float, str]] = []
 
-    # Limit crops for latency (best boxes first from detector).
     for crop_bgr, det_conf in crops_with_conf[:2]:
         proc, note = preprocess_for_ocr(crop_bgr)
         variants = [
@@ -173,26 +197,19 @@ def read_plate_from_crops(
         ]
         for img, variant_note in variants:
             try:
-                for bbox, text, conf in reader.readtext(
-                    img,
-                    detail=1,
-                    paragraph=False,
-                    allowlist=allowlist,
-                ):
-                    raw = str(text or "")
-                    norm = normalize_plate(raw)
+                for raw, conf in _read_lines_from_image(img, allowlist=allowlist):
+                    norm = normalize_plate(str(raw or ""))
                     if not norm:
                         continue
                     refined = refine_indian_plate_ocr(norm)
                     for n in {norm, refined}:
                         all_reads.append((n, float(conf), det_conf, variant_note))
             except Exception as exc:  # noqa: BLE001
-                logger.warning("EasyOCR pass failed on crop variant: %s", exc)
+                logger.warning("OCR pass failed on crop variant: %s", exc)
 
     if not all_reads:
         return None, None, [], None
 
-    # Aggregate repeated OCR outputs across variants/crops; repeated consistent reads are usually reliable.
     score_map: dict[str, float] = defaultdict(float)
     best_conf_map: dict[str, float] = defaultdict(float)
     note_map: dict[str, str] = {}

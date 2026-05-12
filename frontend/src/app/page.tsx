@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiV1 } from "@/config/api";
+import { getApiBase } from "@/lib/api";
 import { ShieldAlert, ShieldCheck, Video, ScanLine, Loader2 } from "lucide-react";
 
 type DetectionResult = {
@@ -21,6 +22,19 @@ type AccessResult = {
   resident_name?: string | null;
   unit_number?: string | null;
 };
+
+function parseAccessErrorBody(parsed: unknown): string {
+  if (!parsed || typeof parsed !== "object") return "";
+  const p = parsed as { detail?: unknown };
+  const d = p.detail;
+  if (typeof d === "string") return d;
+  if (Array.isArray(d)) {
+    return d
+      .map((x) => (typeof x === "object" && x && "msg" in x ? String((x as { msg: string }).msg) : JSON.stringify(x)))
+      .join("; ");
+  }
+  return "";
+}
 
 export default function Home() {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -110,36 +124,99 @@ export default function Home() {
     return blobs;
   }, []);
 
-  const processPlate = useCallback(
-    async (plateRaw: string, sourceLabel: string) => {
-      const plate = plateRaw.trim();
-      if (!plate) {
-        setStatus("Please enter a plate number.");
-        return;
-      }
-      const base = process.env.NEXT_PUBLIC_API_URL || "";
-      const accessRes = await fetch(`${base}${apiV1("/access/process")}`, {
+  const processPlate = useCallback(async (plateRaw: string, sourceLabel: string) => {
+    const plate = plateRaw.trim().replace(/\s+/g, "");
+    if (!plate) {
+      setStatus("Please enter a plate number.");
+      setLastAccess({
+        authorized: false,
+        action: "unauthorized",
+        message: "Enter a plate number (letters and digits only), then run the check again.",
+        requires_visitor_registration: false,
+      });
+      setShowVisitorForm(false);
+      return;
+    }
+    const base = getApiBase();
+    const url = `${base}${apiV1("/access/process")}`;
+    let accessRes: Response;
+    try {
+      accessRes = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ plate_text: plate }),
       });
-      const access = (await accessRes.json()) as AccessResult;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Network error";
       setLastInterpretedPlate(plate);
-      setLastAccess(access);
-      if (access.authorized) {
-        setStatus(`GREEN: ACCESS GRANTED (${sourceLabel})`);
+      setLastAccess({
+        authorized: false,
+        action: "unauthorized",
+        message: `${msg}. Tip: leave NEXT_PUBLIC_API_URL empty in .env so /api uses the Next.js proxy to the backend.`,
+        requires_visitor_registration: false,
+      });
+      setStatus(`RED: could not reach access API (${sourceLabel}).`);
+      setShowVisitorForm(false);
+      return;
+    }
+
+    const rawText = await accessRes.text();
+    let parsed: unknown = {};
+    if (rawText) {
+      try {
+        parsed = JSON.parse(rawText) as unknown;
+      } catch {
+        setLastInterpretedPlate(plate);
+        setLastAccess({
+          authorized: false,
+          action: "unauthorized",
+          message: `Access API returned non-JSON (HTTP ${accessRes.status}). Check that the backend is running on the port in API_PORT.`,
+          requires_visitor_registration: false,
+        });
+        setStatus(`RED: access check failed (${sourceLabel}).`);
         setShowVisitorForm(false);
-      } else if (access.requires_visitor_registration) {
-        setStatus(`RED: UNAUTHORIZED VEHICLE (${sourceLabel}) - Apply gate pass.`);
-        setPlateLocked(plate);
-        setShowVisitorForm(true);
-      } else {
-        setStatus(`RED: ACCESS DENIED (${sourceLabel})`);
-        setShowVisitorForm(false);
+        return;
       }
-    },
-    [],
-  );
+    }
+
+    if (!accessRes.ok) {
+      const detail = parseAccessErrorBody(parsed);
+      setLastInterpretedPlate(plate);
+      setLastAccess({
+        authorized: false,
+        action: "unauthorized",
+        message: detail || `Access API error (HTTP ${accessRes.status}).`,
+        requires_visitor_registration: false,
+      });
+      setStatus(`RED: ACCESS DENIED (${sourceLabel})`);
+      setShowVisitorForm(false);
+      return;
+    }
+
+    const row = parsed as Partial<AccessResult>;
+    const access: AccessResult = {
+      authorized: Boolean(row.authorized),
+      action: typeof row.action === "string" ? row.action : "unauthorized",
+      message: typeof row.message === "string" ? row.message : "Unknown response from access API.",
+      requires_visitor_registration: Boolean(row.requires_visitor_registration),
+      resident_name: row.resident_name ?? null,
+      unit_number: row.unit_number ?? null,
+    };
+
+    setLastInterpretedPlate(plate);
+    setLastAccess(access);
+    if (access.authorized) {
+      setStatus(`GREEN: ACCESS GRANTED (${sourceLabel})`);
+      setShowVisitorForm(false);
+    } else if (access.requires_visitor_registration) {
+      setStatus(`RED: UNAUTHORIZED VEHICLE (${sourceLabel}) - Apply gate pass.`);
+      setPlateLocked(plate);
+      setShowVisitorForm(true);
+    } else {
+      setStatus(`RED: ACCESS DENIED (${sourceLabel})`);
+      setShowVisitorForm(false);
+    }
+  }, []);
 
   const scan = useCallback(async () => {
     if (!cameraOn) {
@@ -156,17 +233,54 @@ export default function Home() {
         setStatus("Could not capture camera frames. Please rescan.");
         return;
       }
-      const base = process.env.NEXT_PUBLIC_API_URL || "";
+      const base = getApiBase();
       const fd = new FormData();
       for (let i = 0; i < blobs.length; i += 1) {
         fd.append("file", blobs[i]!, `frame-${i}.jpg`);
       }
-      const detRes = await fetch(`${base}${apiV1("/detection/analyze")}`, {
-        method: "POST",
-        body: fd,
-      });
-      const det = (await detRes.json()) as DetectionResult;
-      const plate = (det.plate_text?.trim() || det.candidates?.[0]?.trim() || null);
+      const detUrl = `${base}${apiV1("/detection/analyze")}`;
+      let detRes: Response;
+      try {
+        detRes = await fetch(detUrl, { method: "POST", body: fd });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "Network error";
+        setStatus(`Detection request failed: ${msg}`);
+        setLastAccess({
+          authorized: false,
+          action: "unauthorized",
+          message: msg,
+          requires_visitor_registration: false,
+        });
+        return;
+      }
+      const detText = await detRes.text();
+      let det: DetectionResult;
+      try {
+        det = detText ? (JSON.parse(detText) as DetectionResult) : {};
+      } catch {
+        setStatus(detText || "Detection returned invalid JSON.");
+        setLastAccess({
+          authorized: false,
+          action: "unauthorized",
+          message: "Invalid detection response",
+          requires_visitor_registration: false,
+        });
+        return;
+      }
+      if (!detRes.ok) {
+        const hint = parseAccessErrorBody(det) || det.detail?.trim() || `Detection failed (HTTP ${detRes.status}).`;
+        setStatus(hint);
+        setLastAccess({
+          authorized: false,
+          action: "unauthorized",
+          message: hint,
+          requires_visitor_registration: false,
+        });
+        setShowVisitorForm(false);
+        return;
+      }
+      const rawPlate = det.plate_text?.trim() || det.candidates?.[0]?.trim() || null;
+      const plate = rawPlate ? rawPlate.replace(/\s+/g, "") : null;
       setLastConfidence(det.confidence ?? null);
       setLastInterpretedPlate(plate);
       if (!plate) {
@@ -185,7 +299,18 @@ export default function Home() {
       const rescanHint = det.recommend_rescan ? " If unsure, rescan for a clearer read." : "";
       setStatus(`Plate detected: ${plate} (confidence ${pct}).${rescanHint}`);
 
-      await processPlate(plate, `${pct} OCR confidence`);
+      try {
+        await processPlate(plate, `${pct} OCR confidence`);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "Access step failed";
+        setLastAccess({
+          authorized: false,
+          action: "unauthorized",
+          message: msg,
+          requires_visitor_registration: false,
+        });
+        setStatus(`RED: ${msg}`);
+      }
       setManualPlate(plate);
     } finally {
       setBusy(false);
@@ -194,10 +319,30 @@ export default function Home() {
 
   async function submitManualPlate(e: React.FormEvent) {
     e.preventDefault();
+    const normalized = manualPlate.trim().replace(/\s+/g, "").toUpperCase();
+    if (!normalized) {
+      setStatus("Please enter a plate number.");
+      setLastAccess({
+        authorized: false,
+        action: "unauthorized",
+        message: "Type the plate in the box below, then click Check Manually.",
+        requires_visitor_registration: false,
+      });
+      return;
+    }
     setBusy(true);
-    setLastAccess(null);
+    setLastConfidence(null);
     try {
-      await processPlate(manualPlate, "manual entry");
+      await processPlate(normalized, "manual entry");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Manual check failed";
+      setLastAccess({
+        authorized: false,
+        action: "unauthorized",
+        message: msg,
+        requires_visitor_registration: false,
+      });
+      setStatus(`RED: ${msg}`);
     } finally {
       setBusy(false);
     }
@@ -207,7 +352,7 @@ export default function Home() {
     e.preventDefault();
     setBusy(true);
     try {
-      const base = process.env.NEXT_PUBLIC_API_URL || "";
+      const base = getApiBase();
       const res = await fetch(`${base}${apiV1("/visitors/gate-request")}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -336,6 +481,14 @@ export default function Home() {
                       Resident: {lastAccess.resident_name} {lastAccess.unit_number ? `(${lastAccess.unit_number})` : ""}
                     </p>
                   )}
+                </div>
+              ) : lastAccess.requires_visitor_registration ? (
+                <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-amber-950">
+                  <div className="mb-1 flex items-center gap-2 font-semibold">
+                    <ShieldAlert className="h-5 w-5" /> UNAUTHORIZED — GATE PASS
+                  </div>
+                  <p className="text-sm">{lastAccess.message}</p>
+                  <p className="mt-2 text-xs text-amber-900">Complete the visitor form below to request access.</p>
                 </div>
               ) : (
                 <div className="rounded-lg border border-red-300 bg-red-50 p-3 text-red-900">

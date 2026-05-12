@@ -1,6 +1,8 @@
-# Optional: plate detection pipeline (YOLOv8 + EasyOCR + OpenCV). Install after requirements.txt:
+# Optional: plate detection (YOLO) + OCR (PaddleOCR primary, EasyOCR fallback) + OpenCV.
 #   pip install -r requirements-vision.txt
 -r requirements.txt
 opencv-python-headless==4.10.0.84
 ultralytics==8.3.49
 easyocr==1.7.2
+paddlepaddle==2.6.2
+paddleocr==2.7.3

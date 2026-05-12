@@ -1,4 +1,4 @@
-"""End-to-end ANPR: YOLO11 plate detector (HF) + preprocess + EasyOCR; ROI fallback if no boxes."""
+"""End-to-end ANPR: YOLO11 plate detector (HF) + PaddleOCR / EasyOCR + optional OpenAI refine."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ import numpy as np
 from app.services.anpr.detector import detect_plate_regions
 from app.services.anpr.frame_quality import assess_frame_quality
 from app.services.anpr.ocr_engine import preprocess_for_ocr, read_plate_from_crops, read_texts_from_gray
+from app.services.anpr.openai_plate_refine import maybe_openai_refine_plate
 from app.services.anpr.types import VisionConsensusResult, VisionPlateResult
 from app.utils.plates import normalize_plate, refine_indian_plate_ocr
 
@@ -59,15 +60,34 @@ def _ocr_fallback_roi(bgr: np.ndarray) -> VisionPlateResult:
             if c not in seen:
                 seen.add(c)
                 uniq.append(c)
+        plate_final, conf_final = best[0], best[1]
+        refined = maybe_openai_refine_plate(
+            roi,
+            best_plate=plate_final,
+            candidates=uniq,
+            ocr_conf=conf_final,
+        )
+        if refined:
+            uniq2 = list(dict.fromkeys([refined] + uniq))
+            return VisionPlateResult(
+                refined,
+                conf_final,
+                uniq2,
+                "fallback_roi_no_detector_boxes+openai_refine",
+                detection_confidence=None,
+                plate_boxes_found=0,
+                ocr_preprocessing=note,
+                recommend_rescan=float(conf_final) < _FAST_CONSENSUS_MIN_CONF,
+            )
         return VisionPlateResult(
-            best[0],
-            best[1],
+            plate_final,
+            conf_final,
             uniq,
             "fallback_roi_no_detector_boxes",
             detection_confidence=None,
             plate_boxes_found=0,
             ocr_preprocessing=note,
-            recommend_rescan=float(best[1]) < _FAST_CONSENSUS_MIN_CONF,
+            recommend_rescan=float(conf_final) < _FAST_CONSENSUS_MIN_CONF,
         )
     return VisionPlateResult(
         None,
@@ -121,12 +141,24 @@ def _analyze_bgr(frame: np.ndarray) -> VisionPlateResult:
             recommend_rescan=True,
         )
 
+    best_crop_bgr = regions[0][0]
+    refined = maybe_openai_refine_plate(
+        best_crop_bgr,
+        best_plate=plate_text,
+        candidates=list(candidates),
+        ocr_conf=float(ocr_conf) if ocr_conf is not None else None,
+    )
+    plate_out = refined or plate_text
+    candidates_out = (
+        list(dict.fromkeys([refined] + list(candidates))) if refined else list(candidates)
+    )
+
     low_conf = ocr_conf is not None and float(ocr_conf) < _FAST_CONSENSUS_MIN_CONF
     return VisionPlateResult(
-        plate_text,
+        plate_out,
         ocr_conf,
-        candidates,
-        None,
+        candidates_out,
+        "openai_refined" if refined else None,
         detection_confidence=best_det,
         plate_boxes_found=len(regions),
         ocr_preprocessing=note,

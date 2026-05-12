@@ -11,14 +11,13 @@ function apiBase(): string {
   return String(raw).replace(/\/$/, "");
 }
 
-const _base = apiBase();
-
+/** Resolve at call time so client navigations / env stay consistent (avoid stale module snapshot). */
 export function getApiBase(): string {
-  return _base;
+  return apiBase();
 }
 
-/** @deprecated use getApiBase(); kept for live page imports */
-export const API_URL = _base;
+/** @deprecated use getApiBase() */
+export const API_URL = apiBase();
 
 export function getToken(): string | null {
   if (typeof window === "undefined") return null;
@@ -38,7 +37,8 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   }
   const token = getToken();
   if (token) headers.set("Authorization", `Bearer ${token}`);
-  const url = path.startsWith("http") ? path : `${_base}${path}`;
+  const base = apiBase();
+  const url = path.startsWith("http") ? path : `${base}${path}`;
   let res: Response;
   try {
     res = await fetch(url, { ...init, headers });

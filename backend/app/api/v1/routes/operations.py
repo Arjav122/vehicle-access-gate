@@ -26,7 +26,7 @@ from app.services.reports_service import weekly_traffic_summary
 from app.services.vision_service import analyze_detection_scan, analyze_frames_consensus
 from app.agents.alert_graph import run_alert_agent
 from app.agents.analytics_graph import run_analytics_agent
-from app.agents.entry_graph import run_entry_agent
+from app.services.entry_service import process_plate_access
 
 router = APIRouter(tags=["operations"])
 
@@ -92,8 +92,8 @@ def access_process(
     body: PlateProcessRequest,
     db: Annotated[Session, Depends(get_db)],
 ) -> AccessProcessResult:
-    data = run_entry_agent(db, body.plate_text)
-    return AccessProcessResult.model_validate(data)
+    """Authorize plate against DB (residents + visitors). Direct service call — no graph wrapper."""
+    return process_plate_access(db, body.plate_text)
 
 
 @router.post("/detection/analyze", response_model=PlateDetectionResult)

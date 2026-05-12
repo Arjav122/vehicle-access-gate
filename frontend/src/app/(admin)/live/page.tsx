@@ -219,9 +219,23 @@ export default function LivePage() {
     }
   }
 
-  const granted = lastAccess?.authorized && lastAccess.action === "authorized";
-  const isVisitorPass = Boolean(granted && !lastAccess?.vehicle);
-  const isRegistered = Boolean(granted && !!lastAccess?.resident_name);
+  const granted = Boolean(lastAccess?.authorized && lastAccess.action === "authorized");
+  // Backend sets resident_name for both residents and visitors; use vehicle_type + message to branch UI.
+  const isResidentGranted = Boolean(granted && lastAccess?.vehicle_type === "Resident vehicle");
+  const isVisitorEntryGranted = Boolean(
+    granted &&
+      lastAccess &&
+      lastAccess.vehicle_type !== "Resident vehicle" &&
+      lastAccess.message.toLowerCase().includes("entry granted"),
+  );
+  const isVisitorExitGranted = Boolean(
+    granted &&
+      lastAccess &&
+      lastAccess.vehicle_type !== "Resident vehicle" &&
+      lastAccess.message.toLowerCase().includes("exit"),
+  );
+  /** Emerald = entry-style success; sky = visitor exit recorded. */
+  const useExitStyling = isVisitorExitGranted;
 
   return (
     <PageShell title="Gate camera">
@@ -327,7 +341,7 @@ export default function LivePage() {
               </CardContent>
             </Card>
 
-            {granted && isVisitorPass && (
+            {isVisitorEntryGranted && (
               <Card className="border-2 border-teal-500 bg-teal-50/95 shadow-md">
                 <CardContent className="flex flex-col gap-2 p-6">
                   <div className="flex items-center gap-2 text-lg font-bold text-teal-950">
@@ -340,18 +354,22 @@ export default function LivePage() {
               </Card>
             )}
 
-            {granted && isRegistered && (
+            {(isResidentGranted || isVisitorExitGranted) && (
               <Card
                 className={`border-2 shadow-md ${
-                  isEntry ? "border-emerald-500 bg-emerald-50/90" : "border-sky-500 bg-sky-50/90"
+                  useExitStyling ? "border-sky-500 bg-sky-50/90" : "border-emerald-500 bg-emerald-50/90"
                 }`}
               >
                 <CardContent className="flex flex-col gap-3 p-6">
-                  <div className="flex items-center gap-2 text-lg font-bold text-emerald-900">
-                    <ShieldCheck className="h-7 w-7 text-emerald-600" />
-                    ACCESS GRANTED
+                  <div
+                    className={`flex items-center gap-2 text-lg font-bold ${
+                      useExitStyling ? "text-sky-950" : "text-emerald-900"
+                    }`}
+                  >
+                    <ShieldCheck className={`h-7 w-7 ${useExitStyling ? "text-sky-600" : "text-emerald-600"}`} />
+                    {isVisitorExitGranted ? "VISIT RECORDED" : "ACCESS GRANTED"}
                   </div>
-                  {lastAccess?.resident_name != null && (
+                  {isResidentGranted && lastAccess?.resident_name != null && (
                     <div className="grid gap-1 text-sm text-emerald-950">
                       <div>
                         <span className="text-emerald-700">Resident:</span>{" "}
@@ -373,13 +391,21 @@ export default function LivePage() {
                       </div>
                     </div>
                   )}
-                  {!lastAccess?.resident_name && lastAccess?.vehicle && (
-                    <p className="text-sm text-emerald-900">
-                      Plate <span className="font-mono font-semibold">{lastAccess.vehicle.plate_normalized}</span>{" "}
-                      is authorized.
-                    </p>
+                  {isVisitorExitGranted && lastAccess?.resident_name != null && (
+                    <div className="grid gap-1 text-sm text-sky-950">
+                      <div>
+                        <span className="text-sky-700">Visitor:</span>{" "}
+                        <span className="font-medium">{lastAccess.resident_name}</span>
+                      </div>
+                      <div>
+                        <span className="text-sky-700">Plate:</span>{" "}
+                        <span className="font-mono font-semibold">{lastDet?.plate_text || "—"}</span>
+                      </div>
+                    </div>
                   )}
-                  <p className="text-xs text-emerald-800">{lastAccess?.message}</p>
+                  <p className={`text-xs ${useExitStyling ? "text-sky-800" : "text-emerald-800"}`}>
+                    {lastAccess?.message}
+                  </p>
                 </CardContent>
               </Card>
             )}
