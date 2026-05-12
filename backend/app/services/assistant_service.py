@@ -3,6 +3,22 @@ import logging
 
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import tool
+
+
+def _ensure_langchain_root_attrs() -> None:
+    """langchain-core 0.3.x still syncs globals from ``langchain.verbose`` / ``debug`` / ``llm_cache``;
+    ``langchain`` 1.x removed those module attributes → AttributeError when constructing ChatOpenAI."""
+    try:
+        import langchain as _lc  # noqa: PLC0415
+    except ImportError:
+        return
+    for attr, default in (("verbose", False), ("debug", False), ("llm_cache", None)):
+        if not hasattr(_lc, attr):
+            setattr(_lc, attr, default)
+
+
+_ensure_langchain_root_attrs()
+
 from langchain_openai import ChatOpenAI
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
