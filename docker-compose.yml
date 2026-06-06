@@ -1,0 +1,79 @@
+# AI Vehicle Access Management — Docker Compose (production-style).
+#
+# Architecture: frontend (web) + backend (api) + external Supabase Postgres.
+# No application code changes required; uses repo-root `.env` via env_file.
+#
+# Usage:
+#   docker compose up --build -d
+#   docker compose logs -f
+#   docker compose down
+
+name: vehicle-access
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: vehicle-access-api
+    env_file:
+      - .env
+    environment:
+      API_PORT: "8000"
+      UVICORN_RELOAD: "0"
+      HF_HUB_CACHE: /root/.cache/huggingface
+    ports:
+      - "${API_PORT:-8000}:8000"
+    volumes:
+      - model_cache_hf:/root/.cache/huggingface
+      - model_cache_paddle:/root/.paddleocr
+      - model_cache_easyocr:/root/.EasyOCR
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)",
+        ]
+      interval: 20s
+      timeout: 10s
+      retries: 6
+      start_period: 120s
+    restart: unless-stopped
+    networks:
+      - app-net
+
+  web:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        BACKEND_INTERNAL_URL: http://api:8000
+        API_PORT: "8000"
+    container_name: vehicle-access-web
+    env_file:
+      - .env
+    environment:
+      BACKEND_INTERNAL_URL: http://api:8000
+      API_PORT: "8000"
+      NEXT_PUBLIC_API_URL: ""
+      HOSTNAME: "0.0.0.0"
+      PORT: "3000"
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - app-net
+
+volumes:
+  model_cache_hf:
+  model_cache_paddle:
+  model_cache_easyocr:
+
+networks:
+  app-net:
+    driver: bridge
