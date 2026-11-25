@@ -6,7 +6,7 @@ The brief is in [`CLAUDE.md`](../CLAUDE.md). Update this file at the start and e
 |---|---|---|---|---|
 | 0 | Safety, cleanup, foundation | `phase-0-foundation` | 🟢 PR open, CI green; waiting for owner review + merge | [#1](https://github.com/Arjav122/vehicle-access-gate/pull/1) |
 | 1 | Server core, database, auth | `phase-1-server-core` | 🟢 PR open (stacked on #1), CI green; waiting for owner review + merge | [#2](https://github.com/Arjav122/vehicle-access-gate/pull/2) |
-| 2 | Gate event engine | `phase-2-gate-events` | ⚪ Not started | — |
+| 2 | Gate event engine | `phase-2-gate-events` | 🟡 Built and tested; PR next (stacked on #2) | — |
 | 3 | ANPR worker | `phase-3-anpr-worker` | ⚪ Not started | — |
 | 4 | Visitors, approvals, guest passes, real time | `phase-4-visitors-approvals` | ⚪ Not started | — |
 | 5 | Escalation, notifications, scheduled jobs | `phase-5-escalation-jobs` | ⚪ Not started | — |
@@ -74,3 +74,24 @@ Branch `phase-1-server-core`, stacked on `phase-0-foundation` (retarget to `main
 - [x] `docs/decisions.md` (D8–D13), `docs/learn/phase-1.md`, PROGRESS updated
 - [x] Opened [PR #2](https://github.com/Arjav122/vehicle-access-gate/pull/2) (base `phase-0-foundation`); all 5 CI jobs green after one fix (Prettier was checking the generated Prisma client; fixed with `server/.prettierignore`)
 - [ ] Owner: merge #1, then #2 (base switched to `main` first)
+
+## Phase 2 — Gate event engine
+
+Branch `phase-2-gate-events`, stacked on `phase-1-server-core` (retarget to `main` once #1 and #2 merge).
+
+- [x] Plate repair (look-alike swaps by position, IND mark, shape penalties, max 3 swaps) + fuzzy matching (Levenshtein ≤ 1, length pre-filter in SQL, ambiguous → review): **84 plate tests** (D14)
+- [x] Pure visit state machine: 8 statuses × 7 triggers, 10 legal moves; **all 56 pairs tested**
+- [x] `transitionVisit` is the only writer of visit status: row lock, enteredAt/expectedExitAt (category limit or agreed duration), exitedAt/duration, history row in the same transaction, exit resolves open escalation tasks
+- [x] `POST /api/gate-events` (camera key, multipart): idempotency (event hash) + two-sided 30 s debounce under an advisory lock; future-time, lane and confidence checks; per-device rate limit (D16)
+- [x] Matching order: watchlist (even low confidence) → low confidence / unreadable → resident vehicle / expected visitor at that lane → unknown
+- [x] Resident entry/exit pairing (`FOR UPDATE`, unique pairing); expected visitors move inside / exit
+- [x] Watchlist alerts (critical) + `GET /alerts`, idempotent `POST /alerts/:id/acknowledge`
+- [x] Review queue + `POST /gate-events/:id/review` (correct re-runs matching and stores the correction as labelled data, or dismiss; once)
+- [x] Snapshots: local storage, magic-byte check, 2 MB limit (413), retry's file deleted, `GET /gate-events/:id/snapshot`; S3 moved to Phase 8 (D15)
+- [x] `GET /gate-events` with filters + CSV export (formula-safe cells)
+- [x] Bugs found while building, each with a test: one-sided debounce window merged replayed old reads; a visit changing state mid-read could have rejected a car
+- [x] Tests: **436 passing**; `services/` coverage 96.8% lines / 86.3% branches
+- [x] Docker: snapshot volume; real camera upload against the seeded stack (resident matched to A-202 with snapshot, retry → duplicate, watchlist → alert + review)
+- [x] Docs: decisions D14–D16, `docs/learn/phase-2.md`
+- [ ] PR opened, CI green
+- [ ] Owner: merge #1 → #2 → this PR
