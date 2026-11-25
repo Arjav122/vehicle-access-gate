@@ -19,7 +19,8 @@
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "seed": "tsx prisma/seed.ts",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "webcam:devices": "tsx --env-file-if-exists=../.env prisma/webcamDevices.ts"
   },
   "prettier": {
     "printWidth": 100

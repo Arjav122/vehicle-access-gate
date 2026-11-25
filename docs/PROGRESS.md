@@ -7,7 +7,7 @@ The brief is in [`CLAUDE.md`](../CLAUDE.md). Update this file at the start and e
 | 0 | Safety, cleanup, foundation | `phase-0-foundation` | 🟢 PR open, CI green; waiting for owner review + merge | [#1](https://github.com/Arjav122/vehicle-access-gate/pull/1) |
 | 1 | Server core, database, auth | `phase-1-server-core` | 🟢 PR open (stacked on #1), CI green; waiting for owner review + merge | [#2](https://github.com/Arjav122/vehicle-access-gate/pull/2) |
 | 2 | Gate event engine | `phase-2-gate-events` | 🟢 PR open (stacked on #2), CI green; waiting for owner review + merge | [#3](https://github.com/Arjav122/vehicle-access-gate/pull/3) |
-| 3 | ANPR worker | `phase-3-anpr-worker` | ⚪ Not started | — |
+| 3 | ANPR worker | `phase-3-anpr-worker` | 🟢 PR open (stacked on #3), CI green; webcam test passed; waiting for merge | [#4](https://github.com/Arjav122/vehicle-access-gate/pull/4) |
 | 4 | Visitors, approvals, guest passes, real time | `phase-4-visitors-approvals` | ⚪ Not started | — |
 | 5 | Escalation, notifications, scheduled jobs | `phase-5-escalation-jobs` | ⚪ Not started | — |
 | 6 | Frontend | `phase-6-frontend` | ⚪ Not started | — |
@@ -95,3 +95,23 @@ Branch `phase-2-gate-events`, stacked on `phase-1-server-core` (retarget to `mai
 - [x] Docs: decisions D14–D16, `docs/learn/phase-2.md`
 - [x] Opened [PR #3](https://github.com/Arjav122/vehicle-access-gate/pull/3) (base `phase-1-server-core`); all 5 CI jobs green on the first run
 - [ ] Owner: merge #1 → #2 → #3
+
+## Phase 3 — ANPR edge worker
+
+Branch `phase-3-anpr-worker`, stacked on `phase-2-gate-events`.
+
+- [x] Detector: the publisher's pinned ONNX (`f8fb9d5`, SHA-256 checked, AGPL-3.0, not re-hosted); letterbox + `(1,5,N)` decode + NMS in NumPy; no PyTorch/Ultralytics anywhere (D17)
+- [x] OCR: PaddleOCR mobile models with oneDNN off (Windows crash workaround); pieces read rows top→bottom, left→right; IND line dropped; optional `[ocr]` extra (D18)
+- [x] Tracker: reads within 2 edits = one car; vote by summed confidence; send after 3 agreeing reads or a 2 s gap; once per car
+- [x] Client (retries, backoff, Retry-After, 4xx permanent) + SQLite offline buffer per lane (WAL, synchronous=FULL, oldest-first replay, rejected table) (D19)
+- [x] Sources: webcam (DirectShow on Windows), RTSP/HTTP, video (video-time clock), image folder; CLI flags `--source --direction --dry-run --preview --start -v`
+- [x] Webcam preview page: 3 threads, MJPEG, decisions in words, Entry/Exit/Scan again (E/X/Space), Register this visitor link, Save for testing; localhost-only, Host check, custom-header actions, nonce CSP, `frame-ancestors 'none'`
+- [x] `npm run webcam:devices` (server): gate "Laptop webcam" + entry/exit devices, rotated keys written to `anpr/.env`
+- [x] `eval/evaluate.py` + `DATASET.md` + notebooks (`train_detector`, `compare_ocr`); **no accuracy numbers yet** (no labelled real photos)
+- [x] Bugs found with real OCR, fixed with regression tests: oneDNN crash; split pieces read out of order (`123422BHA`)
+- [x] Tests: anpr **66 passing** (real detector on synthetic plates included); server webcam-script tests
+- [x] End to end, real detector + real OCR → running server: resident plate matched to its flat, unknown → unknown, watchlist → alert
+- [x] **Owner:** ran the webcam demo with a real plate on the laptop: plates detected and read correctly (2026-11-25)
+- [ ] **Owner (for real numbers):** collect labelled photos (`anpr/DATASET.md`), then `python eval/evaluate.py --data …`
+- [ ] Deferred: `anpr/Dockerfile` with the production images in Phase 8
+- [x] Opened [PR #4](https://github.com/Arjav122/vehicle-access-gate/pull/4) (base `phase-2-gate-events`); all 5 CI jobs green, including real-detector tests with the model downloaded and hash-checked in CI

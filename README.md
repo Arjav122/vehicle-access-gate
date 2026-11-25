@@ -40,11 +40,16 @@ A full diagram arrives in `docs/architecture.md`.
 
 | Metric | Value |
 |---|---|
-| Plate detection mAP | TBD (measured in Phase 3) |
-| End-to-end exact-plate accuracy | TBD (measured in Phase 3) |
-| Detector CPU latency (ONNX) | TBD (measured in Phase 3) |
+| Plate detection mAP | TBD (needs labelled photos, `anpr/DATASET.md`) |
+| End-to-end exact-plate accuracy | TBD (needs labelled photos, `anpr/DATASET.md`) |
+| Detector CPU latency (ONNX) | TBD (measured with `anpr/eval/evaluate.py` on labelled photos) |
 
 Every number here will come from a reproducible run in `anpr/eval/`.
+
+> **Detector model licence:** the default plate detector is a third-party YOLO11 fine-tune
+> ([DavidDrill69/yolov11-license-plate-detection](https://huggingface.co/DavidDrill69/yolov11-license-plate-detection),
+> **AGPL-3.0**). It is downloaded from its publisher at a pinned commit and SHA-256, never
+> re-hosted here. A detector trained by this project would replace it (`anpr/notebooks/`).
 
 ## Tech stack
 

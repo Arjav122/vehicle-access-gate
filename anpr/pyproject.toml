@@ -8,12 +8,23 @@ version = "0.0.0"
 description = "Edge ANPR worker: finds number plates, reads them, votes across frames, posts one read per car"
 license = "MIT"
 requires-python = ">=3.12"
-# Runtime dependencies (onnxruntime, opencv-python-headless, numpy, paddleocr, httpx,
-# pydantic-settings) are added in Phase 3 when the code that uses them lands.
-dependencies = []
+# No PyTorch / Ultralytics at run time (brief §11.2): the detector runs on ONNX Runtime.
+dependencies = [
+  "numpy>=2.2,<3",
+  "onnxruntime>=1.32,<2",
+  "opencv-python-headless>=5.1,<6",
+  "httpx>=0.28,<1",
+  "pydantic-settings>=2.16,<3",
+]
 
 [project.optional-dependencies]
+# The OCR engine is large (PaddlePaddle + PaddleX), so it is an extra: CI tests the worker with a
+# stand-in OCR, and a real camera install adds it with `pip install -e ".[ocr]"`.
+ocr = ["paddleocr==3.7.0", "paddlepaddle==3.3.1"]
 dev = ["ruff==0.17.6", "pytest==9.2.0"]
+
+[project.scripts]
+anpr = "anpr.cli:main"
 
 [tool.setuptools]
 packages = ["anpr"]
@@ -21,6 +32,8 @@ packages = ["anpr"]
 [tool.ruff]
 target-version = "py312"
 line-length = 100
+# Notebooks are exploratory and run on Kaggle/Colab, not part of the worker.
+extend-exclude = ["notebooks"]
 
 [tool.ruff.lint]
 # pycodestyle, pyflakes, isort, bugbear, pyupgrade, simplify

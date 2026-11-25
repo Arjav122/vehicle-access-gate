@@ -126,3 +126,28 @@ One section per decision: context, decision, alternatives, consequences. Newest 
 - **Matching order:** watchlist (even for low confidence, so the guard is warned) → low confidence or unreadable (review queue) → residents' vehicles and visitors expected *at that lane* (approved visits at entry; inside, overstayed or escalated visits at exit) → unknown. Only `(plate, id)` pairs within ±1 length are loaded (brief §17). Exact beats fuzzy; two equally close plates → `ambiguous` → review queue.
 - **Never drop a car:** if a visit changes state between matching and the camera's move (a guard just closed it), the read is kept and sent to review instead of failing the upload.
 - **Consequences:** a scripted sequence of reads gives the same events, visits, alerts and review items every time (`server/tests/gateEvents.test.ts`).
+
+## D17. Detector: the publisher's pinned ONNX file, downloaded, never re-hosted
+
+- **Context:** D5 chose to keep v1's third-party detector for now. Checking it in Phase 3: the Hugging Face repo `DavidDrill69/yolov11-license-plate-detection` is licensed **AGPL-3.0**, and it already publishes ONNX exports next to the `.pt` files.
+- **Decision:** `python -m anpr.download_model` downloads `license-plate-finetune-v1n.onnx` (10.5 MB) from that repo at commit `f8fb9d5`, and checks its SHA-256 (`693133a1…51d6`) before using it. It downloads atomically through a `.part` file, skips the download when the right file is already there, and prints the licence. No PyTorch or Ultralytics is needed anywhere, not even for a one-time export. The model takes 640×640 RGB scaled to 0–1 and returns `(1, 5, N)`: centre x, centre y, width, height, score, with no NMS inside. Letterboxing, decoding and NMS are NumPy code in `detector.py`.
+- **Consequences:** our code stays MIT, and the weights stay with their AGPL publisher. The README says plainly that the default detector is third-party AGPL. `models-v1` is reserved for a detector we train ourselves (`notebooks/train_detector.ipynb`). CI caches the file and runs real-detector tests on synthetic plate images.
+
+## D18. OCR: PaddleOCR mobile models, oneDNN off, installed as an extra
+
+- **Context:** brief §11.3. Three things found while testing PaddleOCR 3.7 / PaddlePaddle 3.3.1 on Windows with Python 3.12:
+  1. With default settings, inference fails: `ConvertPirAttribute2RuntimeAttribute not support`. This is PaddlePaddle's oneDNN path not supporting the new PIR model format.
+  2. The default "medium" PP-OCRv6 models work with oneDNN off, but are slow.
+  3. Plates come back as several text pieces ("22", "BH", "1234AA"); sorting them by their top edge alone gave `123422BHA`.
+- **Decision:** `enable_mkldnn=False` with the `PP-OCRv5_mobile_det` / `PP-OCRv5_mobile_rec` models. Pieces are read in reading order: grouped into rows (a new row starts when a piece's top is more than half a line height lower), rows top to bottom, each row left to right. A regression test covers the `22BH1234AA` case. PaddleOCR is an optional `[ocr]` extra: CI and quick installs run the worker with a stand-in OCR.
+- **EasyOCR:** not installed. Brief rule: keep it only if it beats PaddleOCR by ≥ 2 points on the same held-out photos. `notebooks/compare_ocr.ipynb` runs that comparison once there is real data.
+- **Measured on this laptop's CPU (synthetic plates; a speed check, not an accuracy claim):** about 1.1 s per crop for OCR, about 60 ms for the detector. So live analysis runs near 1 frame/s, not the configured 5. Frame voting still works: a car needs ~3 s in view for 3 agreeing reads, or it is sent after the 2 s gap. Faster options for later: recognition-only on single-line plates, or a GPU.
+
+## D19. Worker structure: one pipeline, one buffer per lane, a script for webcam keys
+
+- **Context:** brief §11. The CLI and the webcam preview page both need "frame → plate → OCR → vote → send".
+- **Decision:**
+  - `anpr/pipeline.py` holds that chain once (the one file added to the §7 layout), and `Courier` delivers for one lane.
+  - Every voted read is written to the lane's SQLite buffer (`buffer-entry.sqlite`, `buffer-exit.sqlite`; WAL, `synchronous=FULL`) **before** sending, and the queue drains oldest-first. An outage stops the drain without losing anything; a permanent 4xx moves the read to a `rejected` table so it cannot block the queue.
+  - `server/prisma/webcamDevices.ts` (`npm run webcam:devices`) creates or reuses gate "Laptop webcam" with an entry and an exit device, rotates both keys, and writes them into `anpr/.env`, keeping every other line. Like the seed, it refuses a non-local database.
+- **Consequences:** a recording replayed twice produces the same capture times, so the server's idempotency turns the second run into `duplicate`s. The simulator (Phase 7) must skip the "Laptop webcam" devices (brief §13).
