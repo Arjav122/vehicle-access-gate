@@ -4,7 +4,7 @@ The brief is in [`CLAUDE.md`](../CLAUDE.md). Update this file at the start and e
 
 | Phase | Name | Branch | Status | PR |
 |---|---|---|---|---|
-| 0 | Safety, cleanup, foundation | `phase-0-foundation` | 🟡 In progress: built and verified locally; waiting for owner OK to push + open the PR | — |
+| 0 | Safety, cleanup, foundation | `phase-0-foundation` | 🟢 PR open, CI green; waiting for owner review + merge | [#1](https://github.com/Arjav122/vehicle-access-gate/pull/1) |
 | 1 | Server core, database, auth | `phase-1-server-core` | ⚪ Not started | — |
 | 2 | Gate event engine | `phase-2-gate-events` | ⚪ Not started | — |
 | 3 | ANPR worker | `phase-3-anpr-worker` | ⚪ Not started | — |
@@ -48,4 +48,6 @@ The brief is in [`CLAUDE.md`](../CLAUDE.md). Update this file at the start and e
 - [x] Verify: gitleaks over the full history: 6 commits, no leaks. (The working-tree scan flags only the gitignored local `.env`, never committed.)
 - [ ] Not verified yet: live reload of `server/src` edits through the Docker bind mount on Windows (checked in Phase 1)
 - [ ] Owner: confirm the Supabase Postgres major version (D3)
-- [ ] Push `main` + `phase-0-foundation` + tag `v1-original`, switch the GitHub default branch to `main`, open the PR, CI green (after owner OK)
+- [x] Pushed `main`, `phase-0-foundation` and tag `v1-original`; opened [PR #1](https://github.com/Arjav122/vehicle-access-gate/pull/1); all 5 CI jobs green (server, client, anpr, compose smoke test, gitleaks)
+- [ ] Owner: switch the GitHub default branch to `main` and delete `master` on GitHub
+- [ ] Owner: review and merge PR #1
