@@ -22,11 +22,13 @@ import { approvalsRouter } from "./routes/approvals.js";
 import { auditLogsRouter } from "./routes/auditLogs.js";
 import { authRouter } from "./routes/auth.js";
 import { devicesRouter } from "./routes/devices.js";
+import { escalationsRouter } from "./routes/escalations.js";
 import { flatsRouter } from "./routes/flats.js";
 import { gateEventsRouter } from "./routes/gateEvents.js";
 import { gatesRouter } from "./routes/gates.js";
 import { guardsRouter } from "./routes/guards.js";
 import { guestPassesRouter } from "./routes/guestPasses.js";
+import { reconciliationRouter } from "./routes/reconciliation.js";
 import { residentsRouter } from "./routes/residents.js";
 import { settingsRouter } from "./routes/settings.js";
 import { systemRouter } from "./routes/system.js";
@@ -63,6 +65,8 @@ export function createApp() {
     approvalsRouter,
     guestPassesRouter,
     settingsRouter,
+    escalationsRouter,
+    reconciliationRouter,
     auditLogsRouter,
   ]) {
     api.use(router);
