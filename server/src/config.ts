@@ -66,6 +66,13 @@ const schema = z
     SNAPSHOT_LOCAL_DIR: env(z.string().default("./data/snapshots")),
     SNAPSHOT_MAX_BYTES: int(2_000_000),
 
+    SMTP_HOST: env(z.string().default("127.0.0.1")),
+    SMTP_PORT: int(1025),
+    SMTP_SECURE: bool(false),
+    SMTP_FROM: env(z.string().default("Green Valley Gate <gate@example.com>")),
+    SMTP_USER: env(z.string().optional()),
+    SMTP_PASSWORD: env(z.string().optional()),
+
     PUBLIC_BASE_URL: env(z.string().default("http://127.0.0.1:5173")),
     RUN_JOBS: bool(true),
 
