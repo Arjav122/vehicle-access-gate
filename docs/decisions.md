@@ -186,7 +186,49 @@ One section per decision: context, decision, alternatives, consequences. Newest 
 - **Alternatives:** server-sent events (one-way only); polling (slower and wasteful); the Redis adapter (only needed with 2+ instances, D12).
 - **Consequences:** the client treats events as "refetch this query" signals (brief §12), so a missed event only delays a screen until the next refetch or reconnect.
 
+## D23. Notifications: an outbox table, a dispatcher with SKIP LOCKED, retries with backoff
+
+- **Context:** brief §10.6. Emails must never be sent twice, never be lost when SMTP is down, and must not slow the request that caused them.
+- **Decision:**
+  - **Queue:** business steps only `INSERT` a `notifications` row inside their own transaction, with an idempotency key such as `visit:<id>:overstay_reminder:resident:<userId>`, and `ON CONFLICT (idempotency_key) DO NOTHING`. Re-running a step queues nothing new, and an email exists only if the change that caused it was committed.
+  - **Dispatch:** `notifications.dispatch` (every minute) claims one due row at a time with `FOR UPDATE SKIP LOCKED`, sends it through Nodemailer and marks it `sent`. Two dispatchers side by side never take the same row.
+  - **Retries:** a failure sets `next_attempt_at = now + 1, 2, 4 … 60 min` and keeps the last error. After 5 attempts the row is `failed`, and it stays visible in the admin delivery log (`GET /notifications`).
+  - **Templates:** every email has an HTML and a plain-text part from one small layout, and every value is HTML-escaped. Times are shown in IST. Mailpit catches all mail in development.
+- **Alternatives:** sending inside the request (slow, and a rollback can't unsend an email); a queue such as BullMQ or Redis (one more service for a few emails a minute, D12).
+- **Consequences:** delivery is "at least once" at the SMTP level. If the server crashes after SMTP accepts the mail but before the row is marked sent, that one email can go again. The idempotency key prevents every other duplicate.
+
+## D24. Escalation ladder: pure decisions from a passed-in clock, idempotent writes
+
+- **Context:** brief §10.6. Visitors who stay past their limit are followed up in steps, and the job must be safe to run twice, late or after an outage.
+- **Decision:**
+  - **Pure decisions:** `dueSteps(visit, now)` says which steps are due: `overstay` at the limit, `reminder` at +30 min, `escalate` at +60 min. It is pure and table-tested.
+  - **Applying them:** `runLadder(now)` applies the due steps per visit in one transaction, with the visit row locked `FOR UPDATE`:
+    - **overstay:** `transitionVisit("overstay")` timed at the limit itself, then emails the visitor and each resident.
+    - **reminder:** emails the residents again.
+    - **escalate:** `transitionVisit("escalate")` timed at +60 min, then one `escalation_tasks` row ("call the resident", unique per visit).
+  - **Why it's idempotent:** the state machine refuses a second overstay or escalate, email keys are unique and the task is unique per visit. After an outage, one run does every missed step once, in order, with the history showing when each step was *due*.
+  - **The guard's side:** the task list (`GET /escalations`) shows residents' full phones (the guard must dial). `POST /escalations/:id/resolve` records `reached` or `not_reached` once. Any exit closes an open task as `vehicle_left`.
+- **Alternatives:** scheduling one timer per visit (lost on restart); storing a "next step at" column (more state to keep correct than recomputing from `expected_exit_at`).
+- **Consequences:** tests drive the whole ladder with a mocked clock and prove each step happens exactly once, including two runs racing.
+
+## D25. Reconciliation and retention as nightly SQL jobs
+
+- **Context:** brief §3, §10.6. Camera data drifts (missed reads), and personal data must not be kept forever.
+- **Decision:**
+  - **Reconciliation (03:00 IST):** one `INSERT … SELECT … ON CONFLICT (kind, subject_id) DO NOTHING` per finding:
+    - an exit of a resident car that closed no entry;
+    - a resident entry that no exit closed and that a later entry of the same car superseded (a parked car's one open entry is normal, so it is not flagged);
+    - a visit still inside more than `RECONCILIATION_STALE_HOURS` after its limit.
+    - Each finding is flagged once. Admins review the list and mark items resolved.
+  - **Retention (03:30 IST):** past `visitorRetentionDays` (settings, default 90):
+    - visitors' name, phone and email are erased (`purged_at` set), unless a visit of theirs is still open; the anonymised visit history stays for analytics;
+    - sent and failed emails are redacted;
+    - snapshots are deleted from storage in batches of 200.
+- **Alternatives:** deleting visitor rows (would break visit history and analytics); fixing drift automatically (a guess could hide a real problem, so a person decides).
+- **Consequences:** both jobs are safe to re-run. `demo.nightlyReset` (04:00) arrives with demo mode in Phase 7.
+
 ## Deferred
 
 - **Telegram approvals** (stretch): not built in Phase 4. The approval service already takes a `channel`, so the webhook only needs to call `residentDecides(…, "telegram")`.
-- **Visitor email** ("gets an email with visit details"): comes with the notification outbox in Phase 5.
+- **Visitor email** ("gets an email with visit details"): done in Phase 5. An approved visitor with an email gets a "visit approved" message (D23).
+- **`demo.nightlyReset` job:** Phase 7, together with demo mode and the simulator.
