@@ -391,6 +391,7 @@ export async function reviewEvent(
   eventId: string,
   guardId: string,
   review: ReviewAction,
+  now = new Date(),
 ): Promise<GateEvent> {
   return withTx(async (tx) => {
     const rows = await tx.$queryRaw<
@@ -401,7 +402,6 @@ export async function reviewEvent(
     if (event.reviewedAt) throw new ReviewError(409, "This read was already reviewed");
     if (!event.needsReview) throw new ReviewError(409, "This read does not need review");
 
-    const now = new Date();
     if (review.action === "dismiss") {
       return tx.gateEvent.update({
         where: { id: eventId },

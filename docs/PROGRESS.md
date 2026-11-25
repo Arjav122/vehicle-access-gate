@@ -9,8 +9,8 @@ The brief is in [`CLAUDE.md`](../CLAUDE.md). Update this file at the start and e
 | 2 | Gate event engine | `phase-2-gate-events` | ✅ Merged into `main` | [#3](https://github.com/Arjav122/vehicle-access-gate/pull/3) |
 | 3 | ANPR worker | `phase-3-anpr-worker` | ✅ Merged into `main` | [#4](https://github.com/Arjav122/vehicle-access-gate/pull/4) |
 | 4 | Visitors, approvals, guest passes, real time | `phase-4-visitors-approvals` | ✅ Merged into `main` | [#5](https://github.com/Arjav122/vehicle-access-gate/pull/5) |
-| 5 | Escalation, notifications, scheduled jobs | `phase-5-escalation-jobs` | 🟡 In progress | — |
-| 6 | Frontend | `phase-6-frontend` | ⚪ Not started | — |
+| 5 | Escalation, notifications, scheduled jobs | `phase-5-escalation-jobs` | ✅ Merged into `main` | [#6](https://github.com/Arjav122/vehicle-access-gate/pull/6) |
+| 6 | Frontend | `phase-6-frontend` | 🟡 In progress | — |
 | 7 | Simulator, hardening, end-to-end tests | `phase-7-simulator-hardening` | ⚪ Not started | — |
 | 8 | Docker and deployment | `phase-8-deployment` | ⚪ Not started | — |
 | 9 | Polish, docs, release | `phase-9-release` | ⚪ Not started | — |
@@ -147,4 +147,27 @@ Branch `phase-5-escalation-jobs`, from `main`.
 - [x] Tests: **573 passing**, 25 of them new in Phase 5 with a mocked clock (every ladder step exactly once, outage catch-up, racing runs, retries/backoff, racing dispatchers, reconciliation, retention, APIs); `services/` coverage 96.6% lines, 86.8% branches
 - [x] Docker: rebuilt; all five jobs start; a real "visit approved" email (HTML + text) arrived in Mailpit through the dispatcher
 - [ ] Deferred: `demo.nightlyReset` → Phase 7 (with demo mode); Telegram (stretch)
+- [x] [PR #6](https://github.com/Arjav122/vehicle-access-gate/pull/6) opened, CI green, merged into `main`
+
+## Phase 6 — Frontend
+
+Branch `phase-6-frontend`, from `main`.
+
+Server support the screens need:
+- [ ] `GET /analytics/overview?days=14` (busiest hours, daily traffic, average visit, overstay rate, frequent visitors) and `GET /analytics/inside`, IST
+- [ ] `GET /demo` (one-click demo logins, only when `DEMO_MODE=true`)
+- [ ] Seed: 14 days of closed history + a small "right now" state, written through the services
+- [ ] `npm run openapi` writes `client/openapi.json`; CI fails if it drifts
+
+Client:
+- [ ] Tooling: Tailwind, shadcn-style components (Radix), TanStack Query, React Router, Recharts, sonner, lucide-react, IBM Plex Sans
+- [ ] Design system: CSS-variable tokens, light + dark, IND-strip blue accent, status colours with words; `PlateChip`
+- [ ] API client from generated types (openapi-typescript + openapi-fetch), tokens in memory + localStorage, refresh on 401
+- [ ] One Socket.io connection per tab; events invalidate queries; refetch after reconnect
+- [ ] Landing, login + demo buttons, role-checked lazy routes, 404 + error pages
+- [ ] Guard console: arrivals · waiting · alerts/review/call tasks; inside counter; register-visitor dialog (`?register=&event=`), guest code, manual entry/exit
+- [ ] Resident app: approvals with countdown, guest passes, history, profile
+- [ ] Admin: overview analytics (+ "view as table"), visits, resource tables, checks, notifications, audit log, settings
+- [ ] Vitest + Testing Library tests; lint, types, build
+- [ ] Screenshots in `docs/assets/`; decisions; `docs/learn/phase-6.md`
 

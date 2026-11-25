@@ -44,6 +44,8 @@ services:
       PORT: "4000"
       # Dev-only default so `docker compose exec server npm run seed` works out of the box.
       DEMO_PASSWORD: ${DEMO_PASSWORD:-demo-password-change-me}
+      # Dev shows the one-click demo logins on the login page; production keeps it off.
+      DEMO_MODE: ${DEMO_MODE:-true}
       # File-change events do not cross a Windows -> Docker bind mount; let tsx watch poll.
       CHOKIDAR_USEPOLLING: "true"
     ports:

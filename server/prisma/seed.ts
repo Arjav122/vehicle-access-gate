@@ -7,13 +7,20 @@
 // Safety: refuses to touch a database that is not on this machine / in docker compose
 // unless --allow-remote is passed.
 //
-// Phase 1 seeds people, flats, vehicles, gates, devices and the watchlist. Visit history
-// (14 days + "right now") is added in later phases, written through the same services.
+// People, flats, vehicles, gates, devices and the watchlist, then 14 days of closed history
+// plus a small "right now" state, both relative to the moment you run it. History goes through
+// the same services the API uses (camera reads → ingestRead, guard registration, resident
+// answers), so the scheduled jobs find nothing left to repeat.
 import { hashPassword } from "../src/services/auth.js";
-import { prisma } from "../src/db.js";
+import { prisma, withTx } from "../src/db.js";
 import { config } from "../src/config.js";
 import { newDeviceKey } from "../src/routes/devices.js";
+import { istDate } from "../src/services/analytics.js";
+import { guardDecides, requestApproval, residentDecides } from "../src/services/approvals.js";
+import { ingestRead, reviewEvent } from "../src/services/gateEvents.js";
+import { hashCode, newCode } from "../src/services/guestPasses.js";
 import { normalizePlate } from "../src/services/plates.js";
+import { registerVisit, transitionVisit } from "../src/services/visits.js";
 
 const args = new Set(process.argv.slice(2));
 const RESET = args.has("--reset");
@@ -262,14 +269,16 @@ async function main() {
 
   // Gates and their cameras. Keys are shown once, here.
   const keys: string[] = [];
+  const lanes: Lane[] = [];
   for (const gateName of ["Main gate", "Service gate"]) {
     const gate = await prisma.gate.create({ data: { name: gateName } });
     for (const direction of ["entry", "exit"] as const) {
       const { key, hash, prefix } = newDeviceKey();
       const name = `${gateName} ${direction} camera`;
-      await prisma.device.create({
+      const device = await prisma.device.create({
         data: { gateId: gate.id, name, direction, apiKeyHash: hash, apiKeyPrefix: prefix },
       });
+      lanes.push({ deviceId: device.id, gateId: gate.id, direction });
       keys.push(`  ${name.padEnd(28)} ${key}`);
     }
   }
@@ -289,10 +298,15 @@ async function main() {
     });
   }
 
+  const history = await seedHistory(lanes, new Date());
+
   console.log(`
 Seeded "Green Valley Residency, Greater Noida":
   ${String(flats.length)} flats, ${String(residents)} residents, ${String(vehicles)} vehicles, 3 guards, 1 admin,
   2 gates with 4 camera devices, ${String(watch.length)} watchlist plates.
+  History: ${String(history.events)} camera reads and ${String(history.visits)} visits over 14 days, plus "right now".
+
+Guest pass code for A-101 (shown only now): ${history.guestCode}
 
 Demo logins (password = DEMO_PASSWORD):
   admin@example.com · guard@example.com · resident@example.com (A-101)
@@ -300,6 +314,259 @@ Demo logins (password = DEMO_PASSWORD):
 Camera device keys (shown only now; store them on the cameras):
 ${keys.join("\n")}
 `);
+}
+
+// ---------- 14 days of history + "right now" ----------
+
+interface Lane {
+  deviceId: string;
+  gateId: string;
+  direction: "entry" | "exit";
+}
+
+const MIN = 60_000;
+type Category = "guest" | "delivery" | "cab" | "service";
+const LIMITS: Record<Category, number> = {
+  guest: config.VISIT_LIMIT_GUEST_MINUTES,
+  delivery: config.VISIT_LIMIT_DELIVERY_MINUTES,
+  cab: config.VISIT_LIMIT_CAB_MINUTES,
+  service: config.VISIT_LIMIT_SERVICE_MINUTES,
+};
+const PURPOSES: Record<Category, string[]> = {
+  guest: ["Family visit", "Birthday dinner", "Friends over", "Parents visiting"],
+  delivery: ["Amazon parcel", "Swiggy order", "Zomato order", "Flipkart delivery", "Blinkit"],
+  cab: ["Uber drop", "Ola pickup", "Rapido drop"],
+  service: ["Plumber", "Electrician", "AC service", "Internet technician", "Carpenter"],
+};
+
+/** Midnight IST of the day `daysAgo` days before `now` (negative = days ahead). */
+function istMidnight(now: Date, daysAgo: number): number {
+  return Date.parse(`${istDate(new Date(now.getTime() - daysAgo * 86_400_000))}T00:00:00+05:30`);
+}
+
+/** A time of day (minutes after midnight) for the 8–10 am rush, the 6–9 pm rush, or daytime. */
+function rushMinute(kind: "morning" | "evening" | "day"): number {
+  if (kind === "morning") return between(8 * 60, 10 * 60);
+  if (kind === "evening") return between(18 * 60, 21 * 60);
+  return random() < 0.5 ? between(9 * 60, 13 * 60) : between(14 * 60, 21 * 60 + 30);
+}
+
+function pickCategory(): Category {
+  const r = random();
+  if (r < 0.45) return "delivery";
+  if (r < 0.65) return "cab";
+  if (r < 0.9) return "guest";
+  return "service";
+}
+
+interface VisitorOptions {
+  answer?: "approve" | "deny" | "timeout";
+  /** Minutes inside; null = still inside now. Default: mostly in time, ~1 in 8 overstays. */
+  stay?: number | null;
+  category?: Category;
+}
+
+async function seedHistory(lanes: Lane[], now: Date) {
+  const lane = (gate: number, direction: "entry" | "exit") =>
+    lanes.filter((l) => l.direction === direction)[gate] as Lane;
+  const guards = await prisma.user.findMany({
+    where: { role: "guard" },
+    orderBy: { email: "asc" },
+  });
+  const guard = () => pick(guards).id;
+  const vehicles = await prisma.vehicle.findMany({ orderBy: { plateNormalized: "asc" } });
+  const flats = await prisma.flat.findMany({
+    include: { residents: { where: { isPrimaryContact: true } } },
+    orderBy: [{ block: "asc" }, { number: "asc" }],
+  });
+  const residentPlates = new Set(vehicles.map((v) => v.plateNormalized));
+  const visitorPlate = () => {
+    let p = randomPlate();
+    while (residentPlates.has(p) || !normalizePlate(p)) p = randomPlate();
+    return p;
+  };
+  // Regular visitors (the maid's scooter, the family that visits on Sundays) come back.
+  const regulars = Array.from({ length: 12 }, () => ({
+    plate: visitorPlate(),
+    name: `${pick(FIRST)} ${pick(LAST)}`,
+    flat: pick(flats),
+  }));
+
+  let events = 0;
+  let visits = 0;
+  const camera = async (l: Lane, plate: string, at: Date, confidence = 0.9 + random() * 0.09) => {
+    events++;
+    const result = await ingestRead({
+      deviceId: l.deviceId,
+      gateId: l.gateId,
+      direction: l.direction,
+      plateText: plate,
+      confidence,
+      capturedAt: at,
+    });
+    return result.event;
+  };
+
+  // Every car starts the story parked inside (one entry the evening before the window), so
+  // the first morning exit pairs with an entry instead of looking like a missing one.
+  for (const v of vehicles) {
+    const evening = new Date(istMidnight(now, 15) + rushMinute("evening") * MIN);
+    await camera(lane(0, "entry"), v.plateNormalized, evening);
+  }
+
+  /** One visitor: camera read → guard registers → answer → (maybe) exit read. */
+  async function visitor(arrival: Date, opts: VisitorOptions = {}) {
+    const regular = random() < 0.3 ? pick(regulars) : null;
+    const flat = regular?.flat ?? pick(flats);
+    const plate = regular?.plate ?? visitorPlate();
+    const category = opts.category ?? pickCategory();
+    const gate = category === "delivery" || category === "service" ? 1 : 0;
+    const read = await camera(lane(gate, "entry"), plate, arrival);
+    if (read.visitId || read.matchResult !== "unknown") return;
+
+    const registeredAt = new Date(arrival.getTime() + between(40, 90) * 1000);
+    const visit = await withTx((tx) =>
+      registerVisit(
+        tx,
+        {
+          flatId: flat.id,
+          category,
+          visitor: { fullName: regular?.name ?? `${pick(FIRST)} ${pick(LAST)}`, phone: phone() },
+          purpose: pick(PURPOSES[category]),
+          gateEventId: read.id,
+        },
+        guard(),
+        registeredAt,
+        requestApproval,
+      ),
+    );
+    visits++;
+
+    const answer =
+      opts.answer ?? (random() < 0.8 ? "approve" : random() < 0.5 ? "deny" : "timeout");
+    const resident = flat.residents[0];
+    if (answer === "timeout" || !resident) {
+      const late = new Date(registeredAt.getTime() + (config.APPROVAL_TIMEOUT_SECONDS + 20) * 1000);
+      if (late > now) return; // the resident can still answer
+      await guardDecides(visit.id, guard(), random() < 0.85 ? "approve" : "deny", late);
+    } else {
+      const approval = await prisma.approval.findUniqueOrThrow({ where: { visitId: visit.id } });
+      const answeredAt = new Date(registeredAt.getTime() + between(15, 150) * 1000);
+      if (answeredAt > now) return; // still waiting: shows up on the resident's phone
+      await residentDecides(approval.id, resident.userId, answer, "web", answeredAt);
+    }
+
+    const after = await prisma.visit.findUniqueOrThrow({ where: { id: visit.id } });
+    if (after.status !== "inside" || !after.enteredAt || opts.stay === null) return;
+    const limit = LIMITS[category];
+    const overstays = opts.stay === undefined ? random() < 0.12 : opts.stay > limit;
+    const stay =
+      opts.stay ??
+      (overstays
+        ? limit + between(10, 50)
+        : Math.max(3, Math.round(limit * (0.3 + random() * 0.6))));
+    const leave = new Date(after.enteredAt.getTime() + stay * MIN);
+    if (leave > now) return;
+    const expected = after.expectedExitAt;
+    if (overstays && expected) {
+      await withTx((tx) => transitionVisit(tx, visit.id, "overstay", { at: expected }));
+    }
+    await camera(lane(gate, "exit"), plate, leave);
+  }
+
+  const cutoff = now.getTime() - 4 * 60 * MIN; // the last 4 hours are the "right now" state
+  for (let d = 14; d >= 0; d--) {
+    const midnight = istMidnight(now, d);
+    const at = (minute: number) => new Date(midnight + minute * MIN);
+
+    // Resident cars: out in the morning rush, back in the evening.
+    for (const v of vehicles) {
+      if (random() > 0.45) continue;
+      const out = at(rushMinute("morning"));
+      const back = at(rushMinute("evening"));
+      if (out.getTime() > cutoff) continue;
+      await camera(lane(0, "exit"), v.plateNormalized, out);
+      if (back.getTime() <= cutoff) await camera(lane(0, "entry"), v.plateNormalized, back);
+    }
+
+    // Visitors: 10–16 a day.
+    for (let k = 0, n = between(10, 16); k < n; k++) {
+      const roll = random();
+      const kind = roll < 0.2 ? "morning" : roll < 0.4 ? "evening" : "day";
+      const arrival = at(rushMinute(kind));
+      if (arrival.getTime() <= cutoff) await visitor(arrival);
+    }
+
+    // A blurry read now and then, settled by the guard a couple of minutes later.
+    for (let k = 0; k < 2; k++) {
+      const when = at(rushMinute("day"));
+      if (when.getTime() > cutoff) continue;
+      const v = pick(vehicles);
+      const blurry = await camera(
+        lane(0, "entry"),
+        v.plateNormalized.slice(0, -1) + "?",
+        when,
+        0.42 + random() * 0.3,
+      );
+      if (blurry.needsReview) {
+        const fixedAt = new Date(when.getTime() + 2 * MIN);
+        await reviewEvent(
+          blurry.id,
+          guard(),
+          { action: "correct", plate: v.plateNormalized },
+          fixedAt,
+        );
+      }
+    }
+
+    // A watchlisted car tries the gate every few days; the guard acknowledges the alert.
+    if (d % 4 === 2) {
+      const when = at(rushMinute("day"));
+      if (when.getTime() > cutoff) continue;
+      const hit = await camera(lane(0, "entry"), pick(["UP16BT4411", "HR26DK0091"]), when);
+      await prisma.alert.updateMany({
+        where: { gateEventId: hit.id },
+        data: { acknowledgedAt: new Date(when.getTime() + 3 * MIN), acknowledgedById: guard() },
+      });
+    }
+  }
+
+  // ---------- Right now ----------
+  const ago = (minutes: number) => new Date(now.getTime() - minutes * MIN);
+  // Inside, in time.
+  await visitor(ago(8), { category: "delivery", answer: "approve", stay: null });
+  await visitor(ago(70), { category: "guest", answer: "approve", stay: null });
+  await visitor(ago(150), { category: "service", answer: "approve", stay: null });
+  // Past the limit: the escalation job sends the overstay emails and creates the call task.
+  await visitor(ago(LIMITS.cab + 40), { category: "cab", answer: "approve", stay: null });
+  await visitor(ago(LIMITS.delivery + 75), { category: "delivery", answer: "approve", stay: null });
+  // Waiting for the resident (the approval runs out about 3 minutes after seeding).
+  await visitor(ago(0.5), { category: "guest" });
+  // An unknown car at the barrier that the guard has not registered yet.
+  await camera(lane(0, "entry"), visitorPlate(), ago(1.5));
+  // Two unclear reads in the review queue.
+  await camera(lane(0, "entry"), "UP16 A? 12?4", ago(4), 0.46);
+  await camera(lane(1, "entry"), "HR2? DK 00", ago(12), 0.38);
+  // A watchlist hit nobody has acknowledged yet.
+  await camera(lane(0, "entry"), "DL8CAF7203", ago(25), 0.71);
+
+  // A guest pass for the demo resident (A-101): by code, valid until 2 am tomorrow.
+  const demoResident = flats[0]?.residents[0];
+  const guestCode = newCode();
+  if (demoResident) {
+    await prisma.guestPass.create({
+      data: {
+        flatId: demoResident.flatId,
+        createdById: demoResident.userId,
+        guestName: "Anjali Mehta (sister)",
+        codeHash: hashCode(guestCode),
+        validFrom: ago(60),
+        validUntil: new Date(istMidnight(now, -1) + 2 * 60 * MIN),
+        maxUses: 2,
+      },
+    });
+  }
+  return { events, visits, guestCode };
 }
 
 main()

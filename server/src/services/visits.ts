@@ -104,6 +104,8 @@ export async function createVisit(tx: Tx, input: CreateVisitInput): Promise<Visi
       purpose: input.purpose ?? null,
       agreedDurationMinutes: input.agreedDurationMinutes ?? null,
       createdById: input.createdById ?? null,
+      // When it happened (a camera read's capturedAt, or the seed's history), not insert time.
+      createdAt: at,
     },
   });
   await tx.visitStatusChange.create({
