@@ -1,79 +1,70 @@
-# AI Vehicle Access Management — Docker Compose (production-style).
-#
-# Architecture: frontend (web) + backend (api) + external Supabase Postgres.
-# No application code changes required; uses repo-root `.env` via env_file.
-#
-# Usage:
-#   docker compose up --build -d
-#   docker compose logs -f
-#   docker compose down
+# Dev stack: Postgres, Mailpit, Node API, Vite client. Start with `docker compose up --build`.
+# Every port is bound to 127.0.0.1, so nothing is reachable from other machines on your network.
+# The ANPR worker is not here: it runs at the edge (your laptop), see anpr/.
 
 name: vehicle-access
 
 services:
-  api:
-    build:
-      context: .
-      dockerfile: backend/Dockerfile
-    container_name: vehicle-access-api
-    env_file:
-      - .env
+  postgres:
+    # Same major version as the hosted Supabase database (see docs/decisions.md).
+    image: postgres:17-alpine
     environment:
-      API_PORT: "8000"
-      UVICORN_RELOAD: "0"
-      HF_HUB_CACHE: /root/.cache/huggingface
+      POSTGRES_USER: vehicle_access
+      POSTGRES_PASSWORD: vehicle_access
+      POSTGRES_DB: vehicle_access
     ports:
-      - "${API_PORT:-8000}:8000"
+      - "127.0.0.1:5432:5432"
     volumes:
-      - model_cache_hf:/root/.cache/huggingface
-      - model_cache_paddle:/root/.paddleocr
-      - model_cache_easyocr:/root/.EasyOCR
+      - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test:
-        [
-          "CMD",
-          "python",
-          "-c",
-          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)",
-        ]
-      interval: 20s
-      timeout: 10s
-      retries: 6
-      start_period: 120s
-    restart: unless-stopped
-    networks:
-      - app-net
+      test: ["CMD-SHELL", "pg_isready -U vehicle_access -d vehicle_access"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
-  web:
-    build:
-      context: .
-      dockerfile: frontend/Dockerfile
-      args:
-        BACKEND_INTERNAL_URL: http://api:8000
-        API_PORT: "8000"
-    container_name: vehicle-access-web
-    env_file:
-      - .env
-    environment:
-      BACKEND_INTERNAL_URL: http://api:8000
-      API_PORT: "8000"
-      NEXT_PUBLIC_API_URL: ""
-      HOSTNAME: "0.0.0.0"
-      PORT: "3000"
+  mailpit:
+    # Catches every outgoing email in dev. Web inbox: http://127.0.0.1:8025
+    image: axllent/mailpit:v1.34
     ports:
-      - "${WEB_PORT:-3000}:3000"
+      - "127.0.0.1:1025:1025"
+      - "127.0.0.1:8025:8025"
+
+  server:
+    build: ./server
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      # Inside the compose network the database and mail hosts are the service names.
+      DATABASE_URL: postgresql://vehicle_access:vehicle_access@postgres:5432/vehicle_access
+      DIRECT_URL: postgresql://vehicle_access:vehicle_access@postgres:5432/vehicle_access
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      HOST: 0.0.0.0
+      PORT: "4000"
+    ports:
+      - "127.0.0.1:4000:4000"
+    volumes:
+      # Live-edit the source; node_modules stays the one built inside the image.
+      - ./server/src:/app/src:ro
     depends_on:
-      api:
+      postgres:
         condition: service_healthy
-    restart: unless-stopped
-    networks:
-      - app-net
+      mailpit:
+        condition: service_started
+
+  client:
+    build: ./client
+    environment:
+      VITE_DEV_API_TARGET: http://server:4000
+      VITE_USE_POLLING: "true"
+    ports:
+      - "127.0.0.1:5173:5173"
+    volumes:
+      - ./client/src:/app/src:ro
+    depends_on:
+      server:
+        condition: service_healthy
 
 volumes:
-  model_cache_hf:
-  model_cache_paddle:
-  model_cache_easyocr:
-
-networks:
-  app-net:
-    driver: bridge
+  postgres-data:
