@@ -9,8 +9,8 @@ The brief is in [`CLAUDE.md`](../CLAUDE.md). Update this file at the start and e
 | 2 | Gate event engine | `phase-2-gate-events` | ✅ Merged into `main` | [#3](https://github.com/Arjav122/vehicle-access-gate/pull/3) |
 | 3 | ANPR worker | `phase-3-anpr-worker` | ✅ Merged into `main` | [#4](https://github.com/Arjav122/vehicle-access-gate/pull/4) |
 | 4 | Visitors, approvals, guest passes, real time | `phase-4-visitors-approvals` | ✅ Merged into `main` | [#5](https://github.com/Arjav122/vehicle-access-gate/pull/5) |
-| 5 | Escalation, notifications, scheduled jobs | `phase-5-escalation-jobs` | 🟡 In progress | — |
-| 6 | Frontend | `phase-6-frontend` | ⚪ Not started | — |
+| 5 | Escalation, notifications, scheduled jobs | `phase-5-escalation-jobs` | ✅ Merged into `main` | [#6](https://github.com/Arjav122/vehicle-access-gate/pull/6) |
+| 6 | Frontend | `phase-6-frontend` | 🟡 In progress | — |
 | 7 | Simulator, hardening, end-to-end tests | `phase-7-simulator-hardening` | ⚪ Not started | — |
 | 8 | Docker and deployment | `phase-8-deployment` | ⚪ Not started | — |
 | 9 | Polish, docs, release | `phase-9-release` | ⚪ Not started | — |
@@ -147,4 +147,29 @@ Branch `phase-5-escalation-jobs`, from `main`.
 - [x] Tests: **573 passing**, 25 of them new in Phase 5 with a mocked clock (every ladder step exactly once, outage catch-up, racing runs, retries/backoff, racing dispatchers, reconciliation, retention, APIs); `services/` coverage 96.6% lines, 86.8% branches
 - [x] Docker: rebuilt; all five jobs start; a real "visit approved" email (HTML + text) arrived in Mailpit through the dispatcher
 - [ ] Deferred: `demo.nightlyReset` → Phase 7 (with demo mode); Telegram (stretch)
+- [x] [PR #6](https://github.com/Arjav122/vehicle-access-gate/pull/6) opened, CI green, merged into `main`
 
+## Phase 6 — Frontend
+
+Branch `phase-6-frontend`, from `main`.
+
+Server support the screens need:
+- [x] `GET /analytics/overview?days=14` (IST busiest hours, daily traffic, average visit, overstay rate, frequent visitors) and `GET /analytics/inside` (D29)
+- [x] `GET /demo` (one-click demo logins, only when `DEMO_MODE=true`; on in dev compose)
+- [x] Seed: 14 days of closed history + a "right now" state, written through the services (D30): about 1,458 camera reads and 200 visits; visits keep the time they happened as `createdAt`
+- [x] `npm run openapi` writes `client/openapi.json`; `npm run api:types` writes `src/lib/schema.d.ts`; CI fails on drift
+
+Client:
+- [x] Tooling: Tailwind v4, Radix, TanStack Query, React Router, Recharts, sonner, lucide-react, IBM Plex Sans (D31: openapi-typescript peer override)
+- [x] Design system: CSS-variable tokens, light + dark, IND-strip blue accent, status colours with words + icons; `PlateChip` (D27)
+- [x] Typed API client, tokens in memory + localStorage, single-flight refresh on 401 (D28)
+- [x] One Socket.io connection per tab; events invalidate queries; refetch after reconnect (D26)
+- [x] Landing, login + demo buttons, role-checked lazy routes, 404 + error pages
+- [x] Guard console: arrivals · waiting · attention (three columns from 1280 px, tabs below); inside counter; register visitor (`?register=&event=`), guest code, guard decision after timeout, manual entry/exit, alerts, review queue, call tasks
+- [x] Resident app: approvals with countdown, guest passes (code shown once), history, profile
+- [x] Admin: overview analytics (+ "View as table"), visits, gate events + CSV, resource CRUD (flats, residents, vehicles, guards, gates + cameras, watchlist), checks, notifications, audit log, settings
+- [x] Tests: client **42 passing** (Vitest + Testing Library); server **593 passing** (9 new for analytics + demo)
+- [x] Verified by hand in the browser: guard registers an unknown car → resident approves on a phone → guard console updates live (socket) and the car moves inside
+- [x] Screenshots of every main screen in `docs/assets/` (`npm run screenshots`, Playwright against the running stack)
+- [x] `docs/architecture.md` (system, frontend, design system), decisions D26–D31, `docs/learn/phase-6.md`
+- [ ] Deferred: demo reset button + `POST /demo/reset` → Phase 7; Hindi toggle and Telegram link (stretch)
