@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ANPR webcam demo</title>
+    <style>
+      :root { color-scheme: dark; --bg: #0f1115; --panel: #171a21; --line: #2a2f3a; --text: #e7e9ee; --muted: #9aa3b2;
+              --ok: #2fb36d; --warn: #e0a526; --error: #e5484d; --info: #3b82f6; }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.5 system-ui, sans-serif; }
+      main { max-width: 1100px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; grid-template-columns: 2fr 1fr; }
+      @media (max-width: 800px) { main { grid-template-columns: 1fr; } }
+      .video { width: 100%; border: 1px solid var(--line); border-radius: 8px; background: #000; aspect-ratio: 16 / 9; object-fit: contain; }
+      .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px; display: grid; gap: 12px; align-content: start; }
+      .plate { font: 700 28px/1.2 "Arial Narrow", Arial, sans-serif; letter-spacing: 1px; background: #fff; color: #000;
+               border: 2px solid #000; border-left: 14px solid #1f4fb5; border-radius: 4px; padding: 4px 12px; min-height: 44px; }
+      .decision { border-left: 6px solid var(--muted); padding: 8px 12px; background: #11141a; border-radius: 4px; min-height: 44px; }
+      .decision.ok { border-color: var(--ok); } .decision.warn { border-color: var(--warn); }
+      .decision.error { border-color: var(--error); } .decision.info { border-color: var(--info); }
+      .lane { color: var(--muted); }
+      .buttons { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+      button, a.button { min-height: 44px; border: 1px solid var(--line); border-radius: 6px; background: #222734; color: var(--text);
+                         font: inherit; cursor: pointer; text-decoration: none; display: grid; place-items: center; }
+      button[aria-pressed="true"] { background: var(--info); border-color: var(--info); }
+      button:focus-visible, a.button:focus-visible, input:focus-visible { outline: 3px solid var(--warn); outline-offset: 2px; }
+      a.button[hidden] { display: none; }
+      label { color: var(--muted); font-size: 14px; }
+      input { width: 100%; min-height: 44px; padding: 8px; border-radius: 6px; border: 1px solid var(--line); background: #0f1115; color: var(--text); font: inherit; }
+      kbd { border: 1px solid var(--line); border-radius: 3px; padding: 0 4px; font-size: 13px; }
+      .error { color: var(--error); }
+    </style>
+  </head>
+  <body>
+    <main>
+      <img class="video" src="/stream.mjpg" alt="Live webcam with detected plates boxed" />
+      <section class="panel" aria-live="polite">
+        <div class="lane">Lane: <strong id="lane">entry</strong></div>
+        <div id="plate" class="plate" aria-label="Plate read">—</div>
+        <div id="decision" class="decision">Hold a number plate in front of the camera.</div>
+        <div class="buttons">
+          <button id="entry" aria-pressed="true">Entry <kbd>E</kbd></button>
+          <button id="exit" aria-pressed="false">Exit <kbd>X</kbd></button>
+          <button id="rescan">Scan again <kbd>Space</kbd></button>
+        </div>
+        <a id="register" class="button" target="_blank" rel="noopener" hidden>Register this visitor</a>
+        <label for="truth">Save for testing: type the plate exactly as printed</label>
+        <input id="truth" autocomplete="off" placeholder="UP16AB1234" />
+        <button id="save">Save frame + plate</button>
+        <div id="message" role="status"></div>
+      </section>
+    </main>
+    <script nonce="{{NONCE}}">
+      const $ = (id) => document.getElementById(id);
+      async function act(action, plate) {
+        const res = await fetch("/action", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Preview-Action": "1" },
+          body: JSON.stringify({ action, plate }),
+        });
+        const state = await res.json();
+        $("message").textContent = state.error || (action === "save" ? "Saved." : "");
+        $("message").className = state.error ? "error" : "";
+        render(state);
+      }
+      function render(s) {
+        if (!s || s.error) return;
+        $("lane").textContent = s.direction;
+        $("entry").setAttribute("aria-pressed", String(s.direction === "entry"));
+        $("exit").setAttribute("aria-pressed", String(s.direction === "exit"));
+        $("plate").textContent = s.plate || "—";
+        const d = s.decision;
+        $("decision").textContent = d ? d.text : "Hold a number plate in front of the camera.";
+        $("decision").className = "decision " + (d ? d.tone : "");
+        $("register").hidden = !s.registerUrl;
+        if (s.registerUrl) $("register").href = s.registerUrl;
+      }
+      $("entry").addEventListener("click", () => act("entry"));
+      $("exit").addEventListener("click", () => act("exit"));
+      $("rescan").addEventListener("click", () => act("rescan"));
+      $("save").addEventListener("click", () => act("save", $("truth").value));
+      document.addEventListener("keydown", (e) => {
+        if (e.target instanceof HTMLInputElement) return;
+        if (e.key === "e" || e.key === "E") act("entry");
+        else if (e.key === "x" || e.key === "X") act("exit");
+        else if (e.key === " ") { e.preventDefault(); act("rescan"); }
+      });
+      setInterval(async () => render(await (await fetch("/state.json")).json()), 700);
+    </script>
+  </body>
+</html>
