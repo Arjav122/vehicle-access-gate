@@ -51,6 +51,8 @@ services:
     volumes:
       # Live-edit the source; node_modules stays the one built inside the image.
       - ./server/src:/app/src:ro
+      # Camera snapshots survive container rebuilds.
+      - snapshots:/app/data
     depends_on:
       postgres:
         condition: service_healthy
@@ -72,3 +74,4 @@ services:
 
 volumes:
   postgres-data:
+  snapshots:

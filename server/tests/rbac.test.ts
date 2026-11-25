@@ -74,9 +74,9 @@ describe.each(routeTable.filter((r) => r.access.kind === "device"))(
   "$method $path (camera only)",
   (route) => {
     it("works with a valid device key and refuses everything else", async () => {
-      expect((await call(route.method, route.path, { "X-Device-Key": deviceKey })).status).toBe(
-        200,
-      );
+      // A valid key gets past auth (an empty upload is then a 422, not a 401/403).
+      const ok = await call(route.method, route.path, { "X-Device-Key": deviceKey });
+      expect([401, 403]).not.toContain(ok.status);
       expect(
         (await call(route.method, route.path, { "X-Device-Key": "vd_not-a-real-key" })).status,
       ).toBe(401);

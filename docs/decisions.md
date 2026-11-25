@@ -99,3 +99,30 @@ One section per decision: context, decision, alternatives, consequences. Newest 
 - **Decision:** Vitest creates `vehicle_access_test` (it refuses any database whose name does not end in `_test`) and applies the migrations once. Every test truncates all tables first, and test files run one after another. CI runs the same tests against a `postgres:17-alpine` service container. Coverage of `services/` must stay at least 80% (enforced in `vitest.config.ts`).
 - **Alternatives:** an in-memory or SQLite fake (would not exercise CHECK constraints, partial indexes or row locks); one database per test file (faster in parallel, more setup).
 - **Consequences:** the tests catch constraint and locking bugs. The suite stays fast (about 10 seconds) because the schema is created once.
+
+## D14. Plate repair: score every layout, small shape penalties
+
+- **Context:** brief §10.1. OCR confuses look-alike characters (O/0, I/1, B/8, …), and real reads often carry the HSRP "IND" mark.
+- **Decision:** `repairPlate` in `server/src/services/plates.ts` tries every legal layout for the read's length: standard (state + 1–2 digit district + 0–3 letter series + 1–4 digit number) and BH (year + BH + 4 digits + 1–2 letters). A character of the wrong kind is swapped for its look-alike at a cost of 1. Score = swaps + shape penalties (3-digit number 0.3, shorter 0.5; 1- or 3-letter series 0.2, none 0.4). The lowest score wins. More than 3 swaps means unreadable. "IND", and the misreads `INO`/`IN0`/`1ND`/`LND`, are tried with and without at both ends. Series letters never become I, O or Q.
+- **The one large penalty:** a 1-digit district outside Delhi costs **1.1**, a little more than one swap. With a "small" penalty, `UP1ZAB1234` would be accepted as a rare plate with district 1 and series `ZAB`, instead of the far more likely `UP12AB1234`. This is the trap in brief §17.
+- **Alternatives:** a regex per layout plus hand-written special cases (grows without limit); a learned model (no labelled data yet; Phase 3 collects it through guard corrections).
+- **Consequences:** 84 table-driven tests pin the behaviour. Typed plates (admins, guards) are only validated, never repaired: a person's input is taken literally.
+
+## D15. Snapshot storage: local folder now, S3-compatible with deployment
+
+- **Context:** brief §10.8 asks for `local` (default) and an optional S3-compatible store (e.g. Supabase Storage).
+- **Decision:** Phase 2 implements the local store (a Docker named volume, `snapshots`). Setting `SNAPSHOT_STORAGE=s3` is refused at startup with a message pointing here. The S3 store is added in Phase 8, when we know the hosting and can test against a real bucket.
+- **Why not now:** S3 code tested against nothing would be untested code shipped as a feature (brief rule 5). The storage interface (`saveSnapshot` / `loadSnapshot` / `deleteSnapshot`, keys `yyyy/mm/dd/<eventId>.<ext>`) is already what an S3 store needs.
+- **Consequences:** images are recognised by their first bytes (JPEG, PNG or WebP; anything else is a 422). Keys are validated, so a key can never reach outside the snapshot folder.
+
+## D16. Gate-event ingest: one transaction, an advisory lock, a two-sided debounce window
+
+- **Context:** brief §10.2. Cameras retry, the same car is read many times while it waits, and the edge worker replays buffered reads after an outage.
+- **Decision:** each read is handled in one transaction that first takes `pg_advisory_xact_lock(hash(device | plate))`. That serialises work on the same car at the same camera; the lock is released at commit, so it is safe through Supabase's transaction pooler. Inside the lock:
+  1. `event_hash = sha256(device | repaired plate | capturedAt)` already stored → `duplicate`. The unique index is a backstop.
+  2. An event for that device and plate whose `[captured_at − 30 s, last_seen_at + 30 s]` window contains this read's `capturedAt` → push its `last_seen_at` forward → `debounced`.
+  3. Otherwise → create the event and apply the decision.
+- **Bug caught while building:** the first version checked only `last_seen_at ≥ capturedAt − 30 s`. A read from 09:00 replayed after a 10:00 event of the same plate would have been folded into the 10:00 event. The window is now two-sided, and a test replays an old read to pin it.
+- **Matching order:** watchlist (even for low confidence, so the guard is warned) → low confidence or unreadable (review queue) → residents' vehicles and visitors expected *at that lane* (approved visits at entry; inside, overstayed or escalated visits at exit) → unknown. Only `(plate, id)` pairs within ±1 length are loaded (brief §17). Exact beats fuzzy; two equally close plates → `ambiguous` → review queue.
+- **Never drop a car:** if a visit changes state between matching and the camera's move (a guard just closed it), the read is kept and sent to review instead of failing the upload.
+- **Consequences:** a scripted sequence of reads gives the same events, visits, alerts and review items every time (`server/tests/gateEvents.test.ts`).

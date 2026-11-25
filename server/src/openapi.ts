@@ -71,6 +71,9 @@ export interface RouteSpec<B extends z.ZodType, Q extends z.ZodType, P extends z
   params?: P;
   query?: Q;
   body?: B;
+  /** "multipart" for file uploads; `upload` then parses the form (runs after the access check). */
+  bodyType?: "json" | "multipart";
+  upload?: RequestHandler;
   /** Success responses: status → description (+ schema). Error responses are added for you. */
   responses: Record<number, { description: string; schema?: z.ZodType }>;
 }
@@ -107,6 +110,7 @@ export function defineRoute<
   const guards: RequestHandler[] = [];
   if (spec.access.kind === "roles") guards.push(requireRoles(...spec.access.roles));
   if (spec.access.kind === "device") guards.push(requireDevice);
+  if (spec.upload) guards.push(spec.upload);
 
   router[spec.method](spec.path, ...guards, async (req, res) => {
     const ctx = {
@@ -160,7 +164,17 @@ function registerDocs(spec: RouteSpec<z.ZodType, z.ZodType, z.ZodType>): void {
     request: {
       ...(spec.params ? { params: spec.params as z.ZodObject } : {}),
       ...(spec.query ? { query: spec.query as z.ZodObject } : {}),
-      ...(spec.body ? { body: { content: { "application/json": { schema: spec.body } } } } : {}),
+      ...(spec.body
+        ? {
+            body: {
+              content: {
+                [spec.bodyType === "multipart" ? "multipart/form-data" : "application/json"]: {
+                  schema: spec.body,
+                },
+              },
+            },
+          }
+        : {}),
     },
     responses: responses as never,
   });

@@ -62,6 +62,10 @@ const schema = z
     RECONCILIATION_STALE_HOURS: int(24),
     VISITOR_RETENTION_DAYS: int(90),
 
+    SNAPSHOT_STORAGE: env(z.enum(["local", "s3"]).default("local")),
+    SNAPSHOT_LOCAL_DIR: env(z.string().default("./data/snapshots")),
+    SNAPSHOT_MAX_BYTES: int(2_000_000),
+
     PUBLIC_BASE_URL: env(z.string().default("http://127.0.0.1:5173")),
     RUN_JOBS: bool(true),
 
@@ -69,6 +73,14 @@ const schema = z
     DEMO_PASSWORD: env(z.string().optional()),
   })
   .superRefine((c, ctx) => {
+    if (c.SNAPSHOT_STORAGE === "s3") {
+      ctx.addIssue({
+        code: "custom",
+        path: ["SNAPSHOT_STORAGE"],
+        message:
+          "S3 snapshot storage is added with deployment in Phase 8 (docs/decisions.md D15); use local",
+      });
+    }
     if (
       c.NODE_ENV === "production" &&
       (c.JWT_SECRET === DEFAULT_JWT_SECRET || c.JWT_SECRET.length < 32)
