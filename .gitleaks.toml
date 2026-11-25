@@ -1,0 +1,10 @@
+# gitleaks config: use the built-in rules, plus one for our camera device keys.
+# No path allowlist on purpose: .env.example must only ever hold obvious dev placeholders.
+[extend]
+useDefault = true
+
+[[rules]]
+id = "vehicle-access-device-key"
+description = "Camera device key (vd_ + 32 random bytes)"
+regex = '''vd_[A-Za-z0-9_-]{40,}'''
+tags = ["key", "device"]
