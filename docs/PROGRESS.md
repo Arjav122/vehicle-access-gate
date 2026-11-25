@@ -144,6 +144,7 @@ Branch `phase-5-escalation-jobs`, from `main`.
 - [x] Retention: visitor data erased past the retention period (not while a visit is open), old emails redacted, old snapshots deleted
 - [x] "Visit approved" email to the visitor
 - [x] `jobs.ts`: approvals.expire 15 s, escalation.tick and notifications.dispatch every minute, reconciliation 03:00 IST, retention 03:30 IST (`RUN_JOBS=true`)
-- [x] Tests: 25 new Phase 5 tests with a mocked clock (every ladder step exactly once, outage catch-up, racing runs, retries/backoff, racing dispatchers, reconciliation, retention, APIs)
+- [x] Tests: **573 passing**, 25 of them new in Phase 5 with a mocked clock (every ladder step exactly once, outage catch-up, racing runs, retries/backoff, racing dispatchers, reconciliation, retention, APIs); `services/` coverage 96.6% lines, 86.8% branches
+- [x] Docker: rebuilt; all five jobs start; a real "visit approved" email (HTML + text) arrived in Mailpit through the dispatcher
 - [ ] Deferred: `demo.nightlyReset` → Phase 7 (with demo mode); Telegram (stretch)
 
