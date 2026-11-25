@@ -20,7 +20,8 @@ import type {
 } from "../../generated/prisma/client.js";
 import { bestMatch, type Candidate, cleanPlate, repairPlate } from "./plates.js";
 import { IllegalTransitionError } from "./visitState.js";
-import { transitionVisit } from "./visits.js";
+import { admitWithPass } from "./guestPasses.js";
+import { effectiveSettings, transitionVisit } from "./visits.js";
 
 export interface CameraRead {
   deviceId: string;
@@ -65,6 +66,8 @@ export interface Decision {
   matchDistance: number | null;
   vehicleId: string | null;
   visitId: string | null;
+  /** Set when an active guest pass for this plate admits the car. */
+  guestPassId: string | null;
   needsReview: boolean;
   reviewReason: string | null;
   /** Set when the plate is on the watchlist. */
@@ -77,22 +80,25 @@ const EXPECTED: Record<LaneDirection, VisitStatus[]> = {
   exit: ["inside", "overstayed", "escalated"],
 };
 
-async function confidenceThreshold(tx: Tx): Promise<number> {
-  const s = await tx.societySettings.findUnique({
-    where: { id: 1 },
-    select: { confidenceThreshold: true },
-  });
-  return s?.confidenceThreshold ?? config.PLATE_CONFIDENCE_THRESHOLD;
-}
-
 /**
  * Load only (plate, id) pairs whose length is within the fuzzy distance, so the in-memory
  * comparison stays small however big the society gets (brief §17).
  */
-async function candidates(tx: Tx, plate: string, direction: LaneDirection) {
+type Known = "vehicle" | "visit" | "pass";
+
+async function candidates(tx: Tx, plate: string, direction: LaneDirection, at: Date) {
   const d = config.PLATE_FUZZY_MAX_DISTANCE;
   const [lo, hi] = [plate.length - d, plate.length + d];
-  const [watch, vehicles, visits] = await Promise.all([
+  // Guest passes only admit cars, so they are candidates on the entry lane only.
+  const passes =
+    direction === "entry"
+      ? tx.$queryRaw<{ id: string; plate: string }[]>`
+          SELECT id::text, plate_normalized AS plate FROM guest_passes
+          WHERE plate_normalized IS NOT NULL AND revoked_at IS NULL
+            AND valid_from <= ${at} AND valid_until > ${at} AND use_count < max_uses
+            AND char_length(plate_normalized) BETWEEN ${lo} AND ${hi}`
+      : Promise.resolve([]);
+  const [watch, vehicles, visits, guestPasses] = await Promise.all([
     tx.$queryRaw<{ id: string; plate: string }[]>`
       SELECT id::text, plate_normalized AS plate FROM watchlist
       WHERE is_active AND char_length(plate_normalized) BETWEEN ${lo} AND ${hi}`,
@@ -104,12 +110,14 @@ async function candidates(tx: Tx, plate: string, direction: LaneDirection) {
       WHERE status::text = ANY(${EXPECTED[direction]})
         AND plate_normalized IS NOT NULL
         AND char_length(plate_normalized) BETWEEN ${lo} AND ${hi}`,
+    passes,
   ]);
   return {
     watchlist: watch.map((r): Candidate<"watchlist"> => ({ ...r, kind: "watchlist" })),
     known: [
-      ...vehicles.map((r): Candidate<"vehicle" | "visit"> => ({ ...r, kind: "vehicle" })),
-      ...visits.map((r): Candidate<"vehicle" | "visit"> => ({ ...r, kind: "visit" })),
+      ...vehicles.map((r): Candidate<Known> => ({ ...r, kind: "vehicle" })),
+      ...visits.map((r): Candidate<Known> => ({ ...r, kind: "visit" })),
+      ...guestPasses.map((r): Candidate<Known> => ({ ...r, kind: "pass" })),
     ],
   };
 }
@@ -117,11 +125,17 @@ async function candidates(tx: Tx, plate: string, direction: LaneDirection) {
 /** Decide what a read means. Reads the database, writes nothing. */
 export async function decide(
   tx: Tx,
-  read: { plate: string; readable: boolean; confidence: number; direction: LaneDirection },
+  read: {
+    plate: string;
+    readable: boolean;
+    confidence: number;
+    direction: LaneDirection;
+    at: Date;
+  },
 ): Promise<Decision> {
   const maxDistance = config.PLATE_FUZZY_MAX_DISTANCE;
-  const pool = await candidates(tx, read.plate, read.direction);
-  const threshold = await confidenceThreshold(tx);
+  const pool = await candidates(tx, read.plate, read.direction, read.at);
+  const threshold = (await effectiveSettings(tx)).confidenceThreshold;
   const lowConfidence = !read.readable || read.confidence < threshold;
   const reviewReason = !read.readable
     ? "Plate could not be read as a valid Indian plate"
@@ -133,6 +147,7 @@ export async function decide(
     matchDistance: null,
     vehicleId: null,
     visitId: null,
+    guestPassId: null,
     needsReview: false,
     reviewReason: null,
     watchlist: null,
@@ -172,12 +187,19 @@ export async function decide(
   }
   if (known.type === "match") {
     const { candidate, distance } = known;
-    return candidate.kind === "vehicle"
-      ? { ...base, matchResult: "resident", matchDistance: distance, vehicleId: candidate.id }
-      : { ...base, matchResult: "visitor", matchDistance: distance, visitId: candidate.id };
+    if (candidate.kind === "vehicle")
+      return { ...base, matchResult: "resident", matchDistance: distance, vehicleId: candidate.id };
+    if (candidate.kind === "pass")
+      return {
+        ...base,
+        matchResult: "guest_pass",
+        matchDistance: distance,
+        guestPassId: candidate.id,
+      };
+    return { ...base, matchResult: "visitor", matchDistance: distance, visitId: candidate.id };
   }
 
-  // 5. Nobody we know: the guard registers the visitor (Phase 4).
+  // 5. Nobody we know: the guard registers the visitor.
   return base;
 }
 
@@ -226,6 +248,24 @@ export async function applyDecision(
     if (entry) {
       return tx.gateEvent.update({ where: { id: event.id }, data: { pairedEventId: entry.id } });
     }
+  }
+
+  if (decision.matchResult === "guest_pass" && decision.guestPassId) {
+    // Use up one entry of the pass (conditional update: never more uses than allowed), then
+    // create the visit already approved and move it inside.
+    const visit = await admitWithPass(tx, decision.guestPassId, {
+      plate: event.plateNormalized,
+      at: event.capturedAt,
+      gateEventId: event.id,
+      actorUserId: null,
+    });
+    if (!visit) {
+      return tx.gateEvent.update({
+        where: { id: event.id },
+        data: { needsReview: true, reviewReason: "Guest pass was used up or revoked a moment ago" },
+      });
+    }
+    return tx.gateEvent.update({ where: { id: event.id }, data: { visitId: visit.id } });
   }
 
   if (decision.matchResult === "visitor" && decision.visitId) {
@@ -293,6 +333,7 @@ export async function ingestRead(read: CameraRead): Promise<IngestResult> {
         readable,
         confidence: read.confidence,
         direction: read.direction,
+        at: read.capturedAt,
       });
       const created = await tx.gateEvent.create({
         data: {
@@ -381,6 +422,7 @@ export async function reviewEvent(
       readable: true,
       confidence: 1,
       direction: event.direction,
+      at: event.capturedAt,
     });
     const updated = await tx.gateEvent.update({
       where: { id: eventId },
