@@ -7,7 +7,7 @@ The brief is in [`CLAUDE.md`](../CLAUDE.md). Update this file at the start and e
 | 0 | Safety, cleanup, foundation | `phase-0-foundation` | 🟢 PR open, CI green; waiting for owner review + merge | [#1](https://github.com/Arjav122/vehicle-access-gate/pull/1) |
 | 1 | Server core, database, auth | `phase-1-server-core` | 🟢 PR open (stacked on #1), CI green; waiting for owner review + merge | [#2](https://github.com/Arjav122/vehicle-access-gate/pull/2) |
 | 2 | Gate event engine | `phase-2-gate-events` | 🟢 PR open (stacked on #2), CI green; waiting for owner review + merge | [#3](https://github.com/Arjav122/vehicle-access-gate/pull/3) |
-| 3 | ANPR worker | `phase-3-anpr-worker` | 🟡 Built and tested; PR next (stacked on #3); owner webcam test pending | — |
+| 3 | ANPR worker | `phase-3-anpr-worker` | 🟢 PR open (stacked on #3), CI green; owner webcam test + merge pending | [#4](https://github.com/Arjav122/vehicle-access-gate/pull/4) |
 | 4 | Visitors, approvals, guest passes, real time | `phase-4-visitors-approvals` | ⚪ Not started | — |
 | 5 | Escalation, notifications, scheduled jobs | `phase-5-escalation-jobs` | ⚪ Not started | — |
 | 6 | Frontend | `phase-6-frontend` | ⚪ Not started | — |
@@ -114,4 +114,4 @@ Branch `phase-3-anpr-worker`, stacked on `phase-2-gate-events`.
 - [ ] **Owner:** run the webcam demo (`docs/webcam-demo.md`) with a real plate and confirm it works
 - [ ] **Owner (for real numbers):** collect labelled photos (`anpr/DATASET.md`), then `python eval/evaluate.py --data …`
 - [ ] Deferred: `anpr/Dockerfile` with the production images in Phase 8
-- [ ] PR opened, CI green
+- [x] Opened [PR #4](https://github.com/Arjav122/vehicle-access-gate/pull/4) (base `phase-2-gate-events`); all 5 CI jobs green, including real-detector tests with the model downloaded and hash-checked in CI
