@@ -1,4 +1,5 @@
-// App setup: middleware order, routes, docs, errors. Later phases add Socket.io and jobs here.
+// App setup: middleware order, routes, docs, errors; Socket.io and scheduled jobs at start-up.
+import { createServer } from "node:http";
 import { pathToFileURL } from "node:url";
 import express from "express";
 import { config } from "./config.js";
@@ -13,8 +14,11 @@ import {
   requestLogger,
   securityHeaders,
 } from "./middleware.js";
+import { startJobs } from "./jobs.js";
 import { mountDocs } from "./openapi.js";
+import { initRealtime } from "./realtime.js";
 import { alertsRouter } from "./routes/alerts.js";
+import { approvalsRouter } from "./routes/approvals.js";
 import { auditLogsRouter } from "./routes/auditLogs.js";
 import { authRouter } from "./routes/auth.js";
 import { devicesRouter } from "./routes/devices.js";
@@ -22,9 +26,12 @@ import { flatsRouter } from "./routes/flats.js";
 import { gateEventsRouter } from "./routes/gateEvents.js";
 import { gatesRouter } from "./routes/gates.js";
 import { guardsRouter } from "./routes/guards.js";
+import { guestPassesRouter } from "./routes/guestPasses.js";
 import { residentsRouter } from "./routes/residents.js";
+import { settingsRouter } from "./routes/settings.js";
 import { systemRouter } from "./routes/system.js";
 import { vehiclesRouter } from "./routes/vehicles.js";
+import { visitsRouter } from "./routes/visits.js";
 import { watchlistRouter } from "./routes/watchlist.js";
 
 export function createApp() {
@@ -52,6 +59,10 @@ export function createApp() {
     watchlistRouter,
     gateEventsRouter,
     alertsRouter,
+    visitsRouter,
+    approvalsRouter,
+    guestPassesRouter,
+    settingsRouter,
     auditLogsRouter,
   ]) {
     api.use(router);
@@ -67,12 +78,16 @@ export function createApp() {
 // Start listening only when run directly (`tsx src/index.ts`), not when a test imports this file.
 const entryPath = process.argv[1];
 if (entryPath !== undefined && import.meta.url === pathToFileURL(entryPath).href) {
-  const server = createApp().listen(config.PORT, config.HOST, () => {
+  const server = createServer(createApp());
+  initRealtime(server);
+  const jobs = config.RUN_JOBS ? startJobs() : null;
+  server.listen(config.PORT, config.HOST, () => {
     logger.info(
-      `API listening on http://${config.HOST}:${String(config.PORT)} (docs at /api/docs)`,
+      `API listening on http://${config.HOST}:${String(config.PORT)} (docs at /api/docs, real time at /socket.io)`,
     );
   });
   const shutdown = () => {
+    jobs?.stop();
     server.close(() => void prisma.$disconnect().finally(() => process.exit(0)));
   };
   process.on("SIGTERM", shutdown);

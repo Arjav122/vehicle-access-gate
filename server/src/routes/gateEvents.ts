@@ -9,6 +9,7 @@ import { prisma } from "../db.js";
 import type { Prisma } from "../../generated/prisma/client.js";
 import { LaneDirection, MatchResult } from "../../generated/prisma/enums.js";
 import { currentDevice, currentUser, HttpError, notFound } from "../middleware.js";
+import { publish } from "../realtime.js";
 import { DEVICE, defineRoute, IdParams, pageOf, PageQuery, queryBool, roles } from "../openapi.js";
 import { ingestRead, ReviewError, reviewEvent } from "../services/gateEvents.js";
 import { cleanPlate, normalizePlate } from "../services/plates.js";
@@ -21,6 +22,7 @@ import {
   contentTypeOf,
 } from "../services/storage.js";
 import { flatLabel } from "./flats.js";
+import { announceVisit } from "./visits.js";
 
 export const gateEventsRouter = Router();
 
@@ -89,6 +91,17 @@ const toEvent = (e: Row): z.input<typeof GateEvent> => ({
 
 const loadEvent = async (id: string) =>
   toEvent(await prisma.gateEvent.findUniqueOrThrow({ where: { id }, include }));
+
+/** Real time, after commit: the event for staff, any new alert, and the visit it moved. */
+async function announceEvent(event: z.input<typeof GateEvent>): Promise<void> {
+  await publish("gate_event.created", event, { staff: true });
+  const alerts = await prisma.alert.findMany({
+    where: { gateEventId: event.id, acknowledgedAt: null },
+  });
+  for (const alert of alerts)
+    await publish("alert.created", { ...alert, plate: event.plate }, { staff: true });
+  if (event.visitId) await announceVisit(event.visitId);
+}
 
 // ---------- Camera upload ----------
 
@@ -184,9 +197,9 @@ defineRoute(
     }
     if (key && result.event.id !== eventId) await deleteSnapshot(key);
 
-    res
-      .status(result.status === "created" ? 201 : 200)
-      .json({ status: result.status, event: await loadEvent(result.event.id) });
+    const event = await loadEvent(result.event.id);
+    if (result.status === "created") await announceEvent(event);
+    res.status(result.status === "created" ? 201 : 200).json({ status: result.status, event });
   },
 );
 
@@ -432,6 +445,8 @@ defineRoute(
       if (err instanceof ReviewError) throw new HttpError(err.status, err.message);
       throw err;
     }
-    res.json(await loadEvent(params.id));
+    const event = await loadEvent(params.id);
+    await announceEvent(event);
+    res.json(event);
   },
 );
