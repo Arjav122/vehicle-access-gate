@@ -5,3 +5,5 @@ process.env.DATABASE_URL =
   "postgresql://vehicle_access:vehicle_access@127.0.0.1:5432/vehicle_access_test";
 process.env.JWT_SECRET = "test-only-not-a-secret-".repeat(3);
 process.env.CORS_ORIGINS = "http://127.0.0.1:5173";
+// Snapshots go to a throwaway folder, never into the repo.
+process.env.SNAPSHOT_LOCAL_DIR = `${process.env.TEMP ?? process.env.TMPDIR ?? "/tmp"}/vehicle-access-test-snapshots`;
