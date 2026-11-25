@@ -1,0 +1,561 @@
+// Database schema (brief §8). Conventions:
+// - UUID ids, timestamptz(3) in UTC, snake_case tables and columns (@@map / @map)
+// - enums are Prisma enums with lower-case values (see docs/decisions.md D9)
+// - plates are stored twice: as read/typed (plate_raw) and cleaned (plate_normalized)
+// - CHECK constraints and partial indexes that Prisma cannot express live at the end of
+//   the first migration's SQL (prisma/migrations/*_init/migration.sql)
+
+generator client {
+  provider            = "prisma-client"
+  output = "../generated/prisma"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------- Enums ----------
+
+enum Role {
+  admin
+  guard
+  resident
+}
+
+enum ResidentType {
+  owner
+  tenant
+  family
+}
+
+enum VehicleType {
+  car
+  two_wheeler
+}
+
+enum LaneDirection {
+  entry
+  exit
+}
+
+enum MatchResult {
+  resident
+  visitor
+  guest_pass
+  watchlist
+  low_confidence
+  ambiguous
+  unknown
+}
+
+enum AlertKind {
+  watchlist
+}
+
+enum AlertSeverity {
+  info
+  warning
+  critical
+}
+
+enum VisitCategory {
+  guest
+  delivery
+  cab
+  service
+}
+
+enum VisitStatus {
+  pending_approval
+  approved
+  denied
+  expired
+  inside
+  overstayed
+  escalated
+  exited
+}
+
+/// The 7 state-machine triggers, plus `create` for the first row of a visit's history.
+enum VisitTrigger {
+  create
+  approve
+  deny
+  expire
+  enter
+  overstay
+  escalate
+  exit
+}
+
+enum ApprovalStatus {
+  pending
+  approved
+  denied
+  timed_out
+}
+
+enum ApprovalChannel {
+  web
+  telegram
+  guard
+}
+
+enum EscalationStatus {
+  open
+  resolved
+}
+
+enum EscalationOutcome {
+  reached
+  not_reached
+  vehicle_left
+}
+
+enum NotificationChannel {
+  email
+  telegram
+}
+
+enum NotificationStatus {
+  pending
+  sent
+  failed
+}
+
+enum ReconciliationKind {
+  exit_without_entry
+  entry_never_closed
+  stale_visit
+}
+
+// ---------- Society ----------
+
+/// Single row (id = 1, enforced by a CHECK). No row → defaults from config.
+model SocietySettings {
+  id                     Int      @id @default(1)
+  guestMinutes           Int      @map("guest_minutes")
+  deliveryMinutes        Int      @map("delivery_minutes")
+  cabMinutes             Int      @map("cab_minutes")
+  serviceMinutes         Int      @map("service_minutes")
+  approvalTimeoutSeconds Int      @map("approval_timeout_seconds")
+  confidenceThreshold    Float    @map("confidence_threshold")
+  visitorRetentionDays   Int      @map("visitor_retention_days")
+  updatedAt              DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@map("society_settings")
+}
+
+model Flat {
+  id        String   @id @default(uuid()) @db.Uuid
+  block     String
+  number    String
+  floor     Int
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  residents   Resident[]
+  vehicles    Vehicle[]
+  visits      Visit[]
+  guestPasses GuestPass[]
+
+  @@unique([block, number], map: "flats_block_number_key")
+  @@map("flats")
+}
+
+model User {
+  id             String   @id @default(uuid()) @db.Uuid
+  email          String   @unique(map: "users_email_key")
+  fullName       String   @map("full_name")
+  phone          String?
+  role           Role
+  passwordHash   String   @map("password_hash")
+  telegramChatId String?  @unique(map: "users_telegram_chat_id_key") @map("telegram_chat_id")
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  residents           Resident[]
+  refreshTokens       RefreshToken[]
+  reviewedEvents      GateEvent[]          @relation("GateEventReviewer")
+  plateCorrections    PlateCorrection[]
+  acknowledgedAlerts  Alert[]
+  approvedVisits      Visit[]              @relation("VisitApprover")
+  createdVisits       Visit[]              @relation("VisitCreator")
+  visitStatusChanges  VisitStatusChange[]
+  decidedApprovals    Approval[]
+  createdGuestPasses  GuestPass[]
+  resolvedEscalations EscalationTask[]
+  resolvedFlags       ReconciliationFlag[]
+  auditLogs           AuditLog[]
+
+  @@map("users")
+}
+
+/// Links a resident user to a flat.
+model Resident {
+  id               String       @id @default(uuid()) @db.Uuid
+  userId           String       @map("user_id") @db.Uuid
+  flatId           String       @map("flat_id") @db.Uuid
+  residentType     ResidentType @map("resident_type")
+  isPrimaryContact Boolean      @default(false) @map("is_primary_contact")
+  createdAt        DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  flat Flat @relation(fields: [flatId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, flatId], map: "residents_user_flat_key")
+  @@index([flatId], map: "residents_flat_id_idx")
+  @@map("residents")
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  jti       String    @unique(map: "refresh_tokens_jti_key")
+  userId    String    @map("user_id") @db.Uuid
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz(3)
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId], map: "refresh_tokens_user_id_idx")
+  @@map("refresh_tokens")
+}
+
+model Vehicle {
+  id              String      @id @default(uuid()) @db.Uuid
+  flatId          String      @map("flat_id") @db.Uuid
+  plateRaw        String      @map("plate_raw")
+  plateNormalized String      @unique(map: "vehicles_plate_normalized_key") @map("plate_normalized")
+  vehicleType     VehicleType @map("vehicle_type")
+  makeModel       String?     @map("make_model")
+  colour          String?
+  isActive        Boolean     @default(true) @map("is_active")
+  createdAt       DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  flat       Flat        @relation(fields: [flatId], references: [id], onDelete: Restrict)
+  gateEvents GateEvent[]
+
+  @@index([flatId], map: "vehicles_flat_id_idx")
+  @@map("vehicles")
+}
+
+model WatchlistEntry {
+  id              String   @id @default(uuid()) @db.Uuid
+  plateRaw        String   @map("plate_raw")
+  plateNormalized String   @unique(map: "watchlist_plate_normalized_key") @map("plate_normalized")
+  reason          String
+  isActive        Boolean  @default(true) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@map("watchlist")
+}
+
+// ---------- Gates and cameras ----------
+
+model Gate {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @unique(map: "gates_name_key")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  devices    Device[]
+  gateEvents GateEvent[]
+
+  @@map("gates")
+}
+
+/// A camera lane. Authenticates with X-Device-Key; only the SHA-256 of the key is stored.
+model Device {
+  id           String        @id @default(uuid()) @db.Uuid
+  gateId       String        @map("gate_id") @db.Uuid
+  name         String
+  direction    LaneDirection
+  apiKeyHash   String        @unique(map: "devices_api_key_hash_key") @map("api_key_hash")
+  apiKeyPrefix String        @map("api_key_prefix")
+  lastSeenAt   DateTime?     @map("last_seen_at") @db.Timestamptz(3)
+  isActive     Boolean       @default(true) @map("is_active")
+  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  gate       Gate        @relation(fields: [gateId], references: [id], onDelete: Restrict)
+  gateEvents GateEvent[]
+
+  @@unique([gateId, name], map: "devices_gate_name_key")
+  @@map("devices")
+}
+
+model GateEvent {
+  id              String        @id @default(uuid()) @db.Uuid
+  deviceId        String        @map("device_id") @db.Uuid
+  gateId          String        @map("gate_id") @db.Uuid
+  direction       LaneDirection
+  plateRaw        String        @map("plate_raw")
+  plateNormalized String        @map("plate_normalized")
+  ocrFixes        Int           @default(0) @map("ocr_fixes")
+  confidence      Float
+  snapshotKey     String?       @map("snapshot_key")
+  capturedAt      DateTime      @map("captured_at") @db.Timestamptz(3)
+  /// Debounce: pushed forward while the same car keeps being read.
+  lastSeenAt      DateTime      @map("last_seen_at") @db.Timestamptz(3)
+  eventHash       String        @unique(map: "gate_events_event_hash_key") @map("event_hash")
+  matchResult     MatchResult   @map("match_result")
+  matchDistance   Int?          @map("match_distance")
+  vehicleId       String?       @map("vehicle_id") @db.Uuid
+  visitId         String?       @map("visit_id") @db.Uuid
+  /// An exit closes exactly one entry.
+  pairedEventId   String?       @unique(map: "gate_events_paired_event_id_key") @map("paired_event_id") @db.Uuid
+  needsReview     Boolean       @default(false) @map("needs_review")
+  reviewReason    String?       @map("review_reason")
+  reviewedAt      DateTime?     @map("reviewed_at") @db.Timestamptz(3)
+  reviewedById    String?       @map("reviewed_by_id") @db.Uuid
+  createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  device              Device               @relation(fields: [deviceId], references: [id], onDelete: Restrict)
+  gate                Gate                 @relation(fields: [gateId], references: [id], onDelete: Restrict)
+  vehicle             Vehicle?             @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+  visit               Visit?               @relation("GateEventVisit", fields: [visitId], references: [id], onDelete: SetNull)
+  pairedEvent         GateEvent?           @relation("EventPairing", fields: [pairedEventId], references: [id], onDelete: SetNull)
+  pairedBy            GateEvent?           @relation("EventPairing")
+  reviewedBy          User?                @relation("GateEventReviewer", fields: [reviewedById], references: [id], onDelete: Restrict)
+  corrections         PlateCorrection[]
+  alerts              Alert[]
+  entryOf             Visit?               @relation("VisitEntryEvent")
+  exitOf              Visit?               @relation("VisitExitEvent")
+  statusChanges       VisitStatusChange[]
+  reconciliationFlags ReconciliationFlag[]
+
+  @@index([deviceId, plateNormalized, lastSeenAt], map: "gate_events_debounce_idx")
+  @@index([capturedAt], map: "gate_events_captured_at_idx")
+  @@index([plateNormalized], map: "gate_events_plate_normalized_idx")
+  @@map("gate_events")
+}
+
+/// A guard's fix of an unclear read: labelled data for retraining.
+model PlateCorrection {
+  id             String   @id @default(uuid()) @db.Uuid
+  gateEventId    String   @map("gate_event_id") @db.Uuid
+  originalPlate  String   @map("original_plate")
+  correctedPlate String   @map("corrected_plate")
+  guardId        String   @map("guard_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  gateEvent GateEvent @relation(fields: [gateEventId], references: [id], onDelete: Cascade)
+  guard     User      @relation(fields: [guardId], references: [id], onDelete: Restrict)
+
+  @@map("plate_corrections")
+}
+
+model Alert {
+  id               String        @id @default(uuid()) @db.Uuid
+  gateEventId      String        @map("gate_event_id") @db.Uuid
+  kind             AlertKind
+  severity         AlertSeverity
+  message          String
+  acknowledgedAt   DateTime?     @map("acknowledged_at") @db.Timestamptz(3)
+  acknowledgedById String?       @map("acknowledged_by_id") @db.Uuid
+  createdAt        DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  gateEvent      GateEvent @relation(fields: [gateEventId], references: [id], onDelete: Cascade)
+  acknowledgedBy User?     @relation(fields: [acknowledgedById], references: [id], onDelete: Restrict)
+
+  @@index([createdAt], map: "alerts_created_at_idx")
+  @@map("alerts")
+}
+
+// ---------- Visitors and visits ----------
+
+/// Personal data is nulled out after the retention period (purged_at set).
+model Visitor {
+  id        String    @id @default(uuid()) @db.Uuid
+  fullName  String?   @map("full_name")
+  phone     String?
+  email     String?
+  purgedAt  DateTime? @map("purged_at") @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  visits Visit[]
+
+  @@map("visitors")
+}
+
+model Visit {
+  id                    String        @id @default(uuid()) @db.Uuid
+  flatId                String        @map("flat_id") @db.Uuid
+  visitorId             String?       @map("visitor_id") @db.Uuid
+  guestPassId           String?       @map("guest_pass_id") @db.Uuid
+  plateNormalized       String?       @map("plate_normalized")
+  category              VisitCategory
+  purpose               String?
+  status                VisitStatus
+  entryEventId          String?       @unique(map: "visits_entry_event_id_key") @map("entry_event_id") @db.Uuid
+  exitEventId           String?       @unique(map: "visits_exit_event_id_key") @map("exit_event_id") @db.Uuid
+  enteredAt             DateTime?     @map("entered_at") @db.Timestamptz(3)
+  expectedExitAt        DateTime?     @map("expected_exit_at") @db.Timestamptz(3)
+  exitedAt              DateTime?     @map("exited_at") @db.Timestamptz(3)
+  durationMinutes       Int?          @map("duration_minutes")
+  agreedDurationMinutes Int?          @map("agreed_duration_minutes")
+  approvedById          String?       @map("approved_by_id") @db.Uuid
+  createdById           String?       @map("created_by_id") @db.Uuid
+  createdAt             DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt             DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  flat                Flat                 @relation(fields: [flatId], references: [id], onDelete: Restrict)
+  visitor             Visitor?             @relation(fields: [visitorId], references: [id], onDelete: Restrict)
+  guestPass           GuestPass?           @relation(fields: [guestPassId], references: [id], onDelete: Restrict)
+  entryEvent          GateEvent?           @relation("VisitEntryEvent", fields: [entryEventId], references: [id], onDelete: SetNull)
+  exitEvent           GateEvent?           @relation("VisitExitEvent", fields: [exitEventId], references: [id], onDelete: SetNull)
+  approvedBy          User?                @relation("VisitApprover", fields: [approvedById], references: [id], onDelete: Restrict)
+  createdBy           User?                @relation("VisitCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  gateEvents          GateEvent[]          @relation("GateEventVisit")
+  statusChanges       VisitStatusChange[]
+  approval            Approval?
+  escalation          EscalationTask?
+  reconciliationFlags ReconciliationFlag[]
+
+  @@index([status], map: "visits_status_idx")
+  @@index([flatId, createdAt], map: "visits_flat_created_idx")
+  @@index([plateNormalized], map: "visits_plate_normalized_idx")
+  @@map("visits")
+}
+
+/// Append-only history, written in the same transaction as every status change.
+model VisitStatusChange {
+  id          String       @id @default(uuid()) @db.Uuid
+  visitId     String       @map("visit_id") @db.Uuid
+  fromStatus  VisitStatus? @map("from_status")
+  toStatus    VisitStatus  @map("to_status")
+  trigger     VisitTrigger
+  actorUserId String?      @map("actor_user_id") @db.Uuid
+  gateEventId String?      @map("gate_event_id") @db.Uuid
+  changedAt   DateTime     @map("changed_at") @db.Timestamptz(3)
+
+  visit     Visit      @relation(fields: [visitId], references: [id], onDelete: Cascade)
+  actorUser User?      @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
+  gateEvent GateEvent? @relation(fields: [gateEventId], references: [id], onDelete: SetNull)
+
+  @@index([visitId, changedAt], map: "visit_status_changes_visit_idx")
+  @@map("visit_status_changes")
+}
+
+model Approval {
+  id          String           @id @default(uuid()) @db.Uuid
+  visitId     String           @unique(map: "approvals_visit_id_key") @map("visit_id") @db.Uuid
+  status      ApprovalStatus   @default(pending)
+  expiresAt   DateTime         @map("expires_at") @db.Timestamptz(3)
+  channel     ApprovalChannel?
+  decidedById String?          @map("decided_by_id") @db.Uuid
+  decidedAt   DateTime?        @map("decided_at") @db.Timestamptz(3)
+  createdAt   DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  visit     Visit @relation(fields: [visitId], references: [id], onDelete: Cascade)
+  decidedBy User? @relation(fields: [decidedById], references: [id], onDelete: Restrict)
+
+  @@map("approvals")
+}
+
+model GuestPass {
+  id              String    @id @default(uuid()) @db.Uuid
+  flatId          String    @map("flat_id") @db.Uuid
+  createdById     String    @map("created_by_id") @db.Uuid
+  guestName       String?   @map("guest_name")
+  plateNormalized String?   @map("plate_normalized")
+  /// HMAC-SHA256 of the one-time code; the code itself is shown once and never stored.
+  codeHash        String?   @unique(map: "guest_passes_code_hash_key") @map("code_hash")
+  validFrom       DateTime  @map("valid_from") @db.Timestamptz(3)
+  validUntil      DateTime  @map("valid_until") @db.Timestamptz(3)
+  maxUses         Int       @map("max_uses")
+  useCount        Int       @default(0) @map("use_count")
+  revokedAt       DateTime? @map("revoked_at") @db.Timestamptz(3)
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  flat      Flat    @relation(fields: [flatId], references: [id], onDelete: Restrict)
+  createdBy User    @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  visits    Visit[]
+
+  @@index([plateNormalized], map: "guest_passes_plate_normalized_idx")
+  @@map("guest_passes")
+}
+
+// ---------- Follow-up ----------
+
+/// "Call the resident" task for the guard. One per visit.
+model EscalationTask {
+  id           String             @id @default(uuid()) @db.Uuid
+  visitId      String             @unique(map: "escalation_tasks_visit_id_key") @map("visit_id") @db.Uuid
+  status       EscalationStatus   @default(open)
+  outcome      EscalationOutcome?
+  notes        String?
+  resolvedAt   DateTime?          @map("resolved_at") @db.Timestamptz(3)
+  resolvedById String?            @map("resolved_by_id") @db.Uuid
+  createdAt    DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  visit      Visit @relation(fields: [visitId], references: [id], onDelete: Cascade)
+  resolvedBy User? @relation(fields: [resolvedById], references: [id], onDelete: Restrict)
+
+  @@map("escalation_tasks")
+}
+
+/// Outbox: steps insert rows, the dispatcher sends them with retries.
+model Notification {
+  id             String              @id @default(uuid()) @db.Uuid
+  channel        NotificationChannel
+  kind           String
+  recipient      String
+  subject        String?
+  bodyText       String              @map("body_text")
+  bodyHtml       String?             @map("body_html")
+  status         NotificationStatus  @default(pending)
+  attempts       Int                 @default(0)
+  nextAttemptAt  DateTime            @default(now()) @map("next_attempt_at") @db.Timestamptz(3)
+  lastError      String?             @map("last_error")
+  sentAt         DateTime?           @map("sent_at") @db.Timestamptz(3)
+  idempotencyKey String              @unique(map: "notifications_idempotency_key_key") @map("idempotency_key")
+  createdAt      DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([status, nextAttemptAt], map: "notifications_due_idx")
+  @@map("notifications")
+}
+
+model ReconciliationFlag {
+  id           String             @id @default(uuid()) @db.Uuid
+  kind         ReconciliationKind
+  subjectId    String             @map("subject_id") @db.Uuid
+  gateEventId  String?            @map("gate_event_id") @db.Uuid
+  visitId      String?            @map("visit_id") @db.Uuid
+  details      String?
+  resolvedAt   DateTime?          @map("resolved_at") @db.Timestamptz(3)
+  resolvedById String?            @map("resolved_by_id") @db.Uuid
+  createdAt    DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  gateEvent  GateEvent? @relation(fields: [gateEventId], references: [id], onDelete: SetNull)
+  visit      Visit?     @relation(fields: [visitId], references: [id], onDelete: SetNull)
+  resolvedBy User?      @relation(fields: [resolvedById], references: [id], onDelete: Restrict)
+
+  @@unique([kind, subjectId], map: "reconciliation_flags_kind_subject_key")
+  @@map("reconciliation_flags")
+}
+
+/// Who changed what. Never stores passwords, key hashes or code hashes.
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  actorId    String?  @map("actor_id") @db.Uuid
+  action     String
+  entityType String   @map("entity_type")
+  entityId   String?  @map("entity_id")
+  changes    Json?
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  actor User? @relation(fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([entityType, entityId], map: "audit_logs_entity_idx")
+  @@index([createdAt], map: "audit_logs_created_at_idx")
+  @@map("audit_logs")
+}

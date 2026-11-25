@@ -19,6 +19,19 @@ jobs:
     defaults:
       run:
         working-directory: server
+    # Tests run against a real Postgres (same major version as dev and Supabase).
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: vehicle_access
+          POSTGRES_PASSWORD: vehicle_access
+          POSTGRES_DB: vehicle_access
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U vehicle_access" --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql://vehicle_access:vehicle_access@127.0.0.1:5432/vehicle_access_test
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -78,9 +91,20 @@ jobs:
       - name: API answers directly and through the Vite proxy
         run: |
           curl --fail --silent --show-error http://127.0.0.1:4000/api/health
+          curl --fail --silent --show-error http://127.0.0.1:4000/api/ready
+          curl --fail --silent --show-error http://127.0.0.1:4000/api/openapi.json > /dev/null
           curl --fail --silent --show-error http://127.0.0.1:5173/api/health
           curl --fail --silent --show-error http://127.0.0.1:5173/ | grep -q '<div id="root">'
           curl --fail --silent --show-error http://127.0.0.1:8025/ > /dev/null
+      - name: Seed the database and sign in as each demo role
+        run: |
+          docker compose exec -T server npm run seed -- --reset > /dev/null
+          for who in admin guard resident; do
+            curl --fail --silent --show-error -X POST http://127.0.0.1:4000/api/auth/login \
+              -H 'Content-Type: application/json' \
+              -d "{\"email\":\"$who@example.com\",\"password\":\"demo-password-change-me\"}" > /dev/null
+            echo "signed in as $who"
+          done
       - name: Logs on failure
         if: failure()
         run: docker compose logs

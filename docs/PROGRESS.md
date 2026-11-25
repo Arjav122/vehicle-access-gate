@@ -5,7 +5,7 @@ The brief is in [`CLAUDE.md`](../CLAUDE.md). Update this file at the start and e
 | Phase | Name | Branch | Status | PR |
 |---|---|---|---|---|
 | 0 | Safety, cleanup, foundation | `phase-0-foundation` | 🟢 PR open, CI green; waiting for owner review + merge | [#1](https://github.com/Arjav122/vehicle-access-gate/pull/1) |
-| 1 | Server core, database, auth | `phase-1-server-core` | ⚪ Not started | — |
+| 1 | Server core, database, auth | `phase-1-server-core` | 🟢 PR open (stacked on #1), CI green; waiting for owner review + merge | [#2](https://github.com/Arjav122/vehicle-access-gate/pull/2) |
 | 2 | Gate event engine | `phase-2-gate-events` | ⚪ Not started | — |
 | 3 | ANPR worker | `phase-3-anpr-worker` | ⚪ Not started | — |
 | 4 | Visitors, approvals, guest passes, real time | `phase-4-visitors-approvals` | ⚪ Not started | — |
@@ -46,8 +46,31 @@ The brief is in [`CLAUDE.md`](../CLAUDE.md). Update this file at the start and e
 - [x] Verify: `docker compose up --build --wait` starts all four services healthy; API, Vite proxy, web page and Mailpit answer (Postgres 17.12)
 - [x] Fix: client container could not write Vite's temp config as the non-root user, and had no healthcheck so compose still said "healthy". Both Dockerfiles now give `/app` to `node`; the client has a healthcheck, so `--wait` and the CI smoke test catch it
 - [x] Verify: gitleaks over the full history: 6 commits, no leaks. (The working-tree scan flags only the gitignored local `.env`, never committed.)
-- [ ] Not verified yet: live reload of `server/src` edits through the Docker bind mount on Windows (checked in Phase 1)
+- [x] Live reload of `server/src` edits through the Docker bind mount on Windows: fixed and verified in Phase 1 (polling)
 - [ ] Owner: confirm the Supabase Postgres major version (D3)
 - [x] Pushed `main`, `phase-0-foundation` and tag `v1-original`; opened [PR #1](https://github.com/Arjav122/vehicle-access-gate/pull/1); all 5 CI jobs green (server, client, anpr, compose smoke test, gitleaks)
 - [ ] Owner: switch the GitHub default branch to `main` and delete `master` on GitHub
 - [ ] Owner: review and merge PR #1
+
+## Phase 1 — Server core, database, auth
+
+Branch `phase-1-server-core`, stacked on `phase-0-foundation` (retarget to `main` once PR #1 merges).
+
+- [x] Versions checked (Prisma 7.10.1 stable; `latest` tag is an 8.0 release candidate) (D8)
+- [x] `config.ts`: env parsed with Zod; refuses the default JWT secret in production
+- [x] `db.ts`: Prisma client (pg driver adapter), transaction helper, constraint → 409 helper
+- [x] `middleware.ts`: request id, pino logging, helmet, CORS allow-list, body limits, auth, device auth, `requireRoles`, validation, errors
+- [x] `/api/health`, `/api/ready` (503 when Postgres is down)
+- [x] Full Prisma schema (21 tables) + first migration with 22 CHECK constraints and partial indexes (review queue, one primary contact per flat)
+- [x] `docs/database.md`: Mermaid ER diagram + one line per table
+- [x] Auth (§10.7): login (argon2id, dummy-hash timing guard, per-IP and per-account limits), refresh rotation with reuse detection, logout, `GET /me`
+- [x] CRUD with pagination/filters + audit log: flats, residents, vehicles, guards, gates, devices (+ rotate key, `GET /devices/me`), watchlist; `GET /audit-logs`
+- [x] Plate cleaning + Indian format validation for vehicles/watchlist (full repair + fuzzy match in Phase 2)
+- [x] OpenAPI 3.1 from Zod + Swagger UI at `/api/docs` (44 endpoints)
+- [x] Seed script (`npm run seed`, fixed random seed, `--reset`, refuses non-local DBs): 40 flats, 60 residents, 81 vehicles, 3 guards, 2 gates × 2 cameras, 3 watchlist plates
+- [x] Tests against a real Postgres test DB: 265 tests, every role on every route; `services/` line coverage 98.7% (threshold 80%)
+- [x] CI: server job gets a Postgres service container; compose smoke test seeds and signs in as each demo role
+- [x] Docker dev: migrations applied on start; live reload works on Windows (polling; Phase 0 open item closed)
+- [x] `docs/decisions.md` (D8–D13), `docs/learn/phase-1.md`, PROGRESS updated
+- [x] Opened [PR #2](https://github.com/Arjav122/vehicle-access-gate/pull/2) (base `phase-0-foundation`); all 5 CI jobs green after one fix (Prettier was checking the generated Prisma client; fixed with `server/.prettierignore`)
+- [ ] Owner: merge #1, then #2 (base switched to `main` first)
