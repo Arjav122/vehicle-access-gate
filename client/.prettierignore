@@ -1,0 +1,4 @@
+dist
+coverage
+openapi.json
+src/lib/schema.d.ts

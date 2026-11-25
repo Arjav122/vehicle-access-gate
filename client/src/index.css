@@ -1,0 +1,106 @@
+/* Design system (docs/architecture.md "Frontend design system").
+   Neutral greys + one blue accent taken from the IND strip of an Indian number plate.
+   1 px borders instead of shadows. Light + dark themes via CSS variables on :root / .dark.
+   Status colours only ever mean state, and always come with a word or an icon. */
+@import "tailwindcss";
+@import "@fontsource/ibm-plex-sans/400.css";
+@import "@fontsource/ibm-plex-sans/500.css";
+@import "@fontsource/ibm-plex-sans/600.css";
+@import "@fontsource/ibm-plex-sans/700.css";
+@import "@fontsource/ibm-plex-sans-condensed/600.css";
+@import "@fontsource/ibm-plex-sans-condensed/700.css";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --background: #ffffff;
+  --foreground: #0f172a;
+  --muted: #f4f5f7;
+  --muted-foreground: #5b6474;
+  --surface: #fafafb;
+  --border: #e3e5ea;
+  --input: #d6d9e0;
+  --ring: #1f4fb8;
+  /* IND-strip blue */
+  --accent: #1f4fb8;
+  --accent-foreground: #ffffff;
+  --accent-soft: #e8eefb;
+  /* State colours (text-safe on the background, WCAG AA) */
+  --ok: #0f7a3d;
+  --ok-soft: #e5f5eb;
+  --warn: #9a5b00;
+  --warn-soft: #fdf2df;
+  --danger: #b4232c;
+  --danger-soft: #fdeaea;
+  --info: #1f4fb8;
+  --info-soft: #e8eefb;
+}
+
+.dark {
+  --background: #0b0d12;
+  --foreground: #e8eaef;
+  --muted: #161922;
+  --muted-foreground: #9aa3b2;
+  --surface: #11141b;
+  --border: #262b36;
+  --input: #333947;
+  --ring: #6f9bff;
+  --accent: #5b8cff;
+  --accent-foreground: #0b0d12;
+  --accent-soft: #17233f;
+  --ok: #4cc77f;
+  --ok-soft: #0f2a1b;
+  --warn: #f0b14a;
+  --warn-soft: #2e2210;
+  --danger: #ff7a7f;
+  --danger-soft: #331418;
+  --info: #7ea6ff;
+  --info-soft: #17233f;
+}
+
+@theme inline {
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-plate: "IBM Plex Sans Condensed", "IBM Plex Sans", ui-sans-serif, sans-serif;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-surface: var(--surface);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent-soft: var(--accent-soft);
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+  html {
+    color-scheme: light;
+  }
+  html.dark {
+    color-scheme: dark;
+  }
+  body {
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    font-feature-settings: "tnum" 1; /* tabular numbers: times and counts line up */
+    -webkit-font-smoothing: antialiased;
+  }
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+}
