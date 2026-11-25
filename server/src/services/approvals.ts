@@ -9,6 +9,7 @@
 import type { Tx } from "../db.js";
 import { withTx } from "../db.js";
 import type { Approval, ApprovalChannel, Visit } from "../../generated/prisma/client.js";
+import { queueEmail, templates } from "./notifications.js";
 import { admitWaitingCar, effectiveSettings, flatIdsOf, transitionVisit } from "./visits.js";
 
 export type Answer = "approve" | "deny";
@@ -60,6 +61,27 @@ export interface DecisionResult {
   timedOut: boolean;
 }
 
+/** Tell the visitor (if they gave an email) that the visit is approved, via the outbox. */
+async function emailVisitorApproved(tx: Tx, visitId: string): Promise<void> {
+  const v = await tx.visit.findUniqueOrThrow({
+    where: { id: visitId },
+    include: { flat: true, visitor: true },
+  });
+  if (!v.visitor?.email) return;
+  await queueEmail(tx, {
+    kind: "visit_approved",
+    to: v.visitor.email,
+    key: `visit:${v.id}:approved:visitor`,
+    message: templates.visitApproved({
+      flatLabel: `${v.flat.block}-${v.flat.number}`,
+      visitorName: v.visitor.fullName,
+      plate: v.plateNormalized,
+      category: v.category,
+      expectedExitAt: v.expectedExitAt,
+    }),
+  });
+}
+
 /** Apply an answer to a pending approval: approval row, visit move, and the waiting car. */
 async function applyAnswer(
   tx: Tx,
@@ -83,6 +105,7 @@ async function applyAnswer(
   if (answer === "approve" && (await admitWaitingCar(tx, visit.id, now, actorUserId))) {
     visit = await tx.visit.findUniqueOrThrow({ where: { id: visit.id } });
   }
+  if (answer === "approve") await emailVisitorApproved(tx, visit.id);
   return { approval: updated, visit, changed: true, timedOut: false };
 }
 
