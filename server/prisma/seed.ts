@@ -364,6 +364,8 @@ interface VisitorOptions {
   /** Minutes inside; null = still inside now. Default: mostly in time, ~1 in 8 overstays. */
   stay?: number | null;
   category?: Category;
+  /** The flat being visited (default: random; regular visitors keep their own flat). */
+  flatIndex?: number;
 }
 
 async function seedHistory(lanes: Lane[], now: Date) {
@@ -416,8 +418,11 @@ async function seedHistory(lanes: Lane[], now: Date) {
 
   /** One visitor: camera read → guard registers → answer → (maybe) exit read. */
   async function visitor(arrival: Date, opts: VisitorOptions = {}) {
-    const regular = random() < 0.3 ? pick(regulars) : null;
-    const flat = regular?.flat ?? pick(flats);
+    const regular = opts.flatIndex === undefined && random() < 0.3 ? pick(regulars) : null;
+    const flat =
+      regular?.flat ??
+      (opts.flatIndex !== undefined ? flats[opts.flatIndex] : undefined) ??
+      pick(flats);
     const plate = regular?.plate ?? visitorPlate();
     const category = opts.category ?? pickCategory();
     const gate = category === "delivery" || category === "service" ? 1 : 0;
@@ -540,8 +545,8 @@ async function seedHistory(lanes: Lane[], now: Date) {
   // Past the limit: the escalation job sends the overstay emails and creates the call task.
   await visitor(ago(LIMITS.cab + 40), { category: "cab", answer: "approve", stay: null });
   await visitor(ago(LIMITS.delivery + 75), { category: "delivery", answer: "approve", stay: null });
-  // Waiting for the resident (the approval runs out about 3 minutes after seeding).
-  await visitor(ago(0.5), { category: "guest" });
+  // Waiting for the demo resident of A-101 (the approval runs out about 3 minutes after seeding).
+  await visitor(ago(0.5), { category: "guest", flatIndex: 0 });
   // An unknown car at the barrier that the guard has not registered yet.
   await camera(lane(0, "entry"), visitorPlate(), ago(1.5));
   // Two unclear reads in the review queue.

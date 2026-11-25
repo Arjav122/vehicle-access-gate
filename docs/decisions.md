@@ -227,8 +227,79 @@ One section per decision: context, decision, alternatives, consequences. Newest 
 - **Alternatives:** deleting visitor rows (would break visit history and analytics); fixing drift automatically (a guess could hide a real problem, so a person decides).
 - **Consequences:** both jobs are safe to re-run. `demo.nightlyReset` (04:00) arrives with demo mode in Phase 7.
 
+## D26. Frontend architecture: one React app, lazy role areas, the server is the only store
+
+- **Context:** brief §12. Three very different users (guard at a gate, resident on a phone, admin at a desk) share one codebase, and the screens must stay correct while events arrive live.
+- **Decision:**
+  - One Vite + React app with role-checked, lazy-loaded areas (`/guard`, `/resident`, `/admin`); a resident's phone never downloads the admin charts.
+  - All server data goes through TanStack Query. No global store, no copies.
+  - One Socket.io connection per tab. An event *invalidates* the queries that show that data, and those screens refetch. Nothing patches cached data by hand. After a reconnect everything is refetched, because events sent while offline are lost.
+  - API types are generated from the server's OpenAPI (`npm run openapi` → `client/openapi.json` → `npm run api:types`). CI fails if either file drifts, so a renamed field breaks the build, not the guard's screen.
+  - The admin resource tables (flats, residents, vehicles, guards, gates, cameras, watchlist) are one generic component driven by a config per resource. It uses a small loosely typed request helper; everything else uses the typed client.
+- **Alternatives:** Next.js (server rendering adds little behind a sign-in; v1 used it); Redux/Zustand (a second copy of server data that events would have to keep in sync); patching the cache from socket payloads (two code paths that can disagree).
+- **Consequences:** an event costs one small refetch. The UI can't drift from the server's truth, and missed events heal on the next refetch.
+
+## D27. Design system: tokens, one accent, the PlateChip
+
+- **Context:** brief §12. Calm and modern, accessible, light + dark, and status colours that never carry meaning alone.
+- **Decision:**
+  - Colours are CSS variables on `:root` / `.dark`, mapped into Tailwind v4 with `@theme inline`.
+  - Neutral greys, plus one blue accent taken from the IND strip of an HSRP plate (validated for chart contrast in both themes).
+  - 1 px borders, no shadows; IBM Plex Sans with tabular numbers.
+  - State colours (ok / warn / danger / info) appear only with a word and an icon (`VisitStatusBadge`, `MatchBadge`).
+  - Components are shadcn-style files built on Radix primitives, which provide focus traps, Esc and arrow-key behaviour.
+  - The **guard console has its own theme, dark by default** (night shifts, glare at the gate), with touch targets of at least 44 px; the resident app is mobile-first with a bottom tab bar.
+  - **PlateChip** draws every plate as a mini HSRP plate, grouped as printed (`UP16 AB 1234`, `22 BH 1234 AA`). It stays white in dark mode and is read out character by character by screen readers.
+  - Charts are single-series in the accent colour, each with a title, a tooltip and a "View as table" switch. Two measures of different size get two charts, never one chart with two y-axes.
+- **Alternatives:** a component kit with its own look (Material/Ant: heavier, and harder to make feel like this product); colour-only status dots.
+- **Consequences:** a theme switch is one class on `<html>`. Adding a component means copying the pattern, not adding a dependency.
+
+## D28. Client auth: in-memory tokens mirrored to localStorage, single-flight refresh
+
+- **Context:** brief §10.7 and §17. Refresh tokens are single-use, and reusing a revoked one signs the user out everywhere.
+- **Decision:**
+  - The token store keeps the pair in memory and mirrors it to localStorage, so a reload stays signed in.
+  - A 401 triggers **one** shared refresh: parallel requests wait for the same promise, then retry once. A refused refresh signs out.
+  - Signing in writes the user into the `["me"]` query (`setQueryData`) and drops the previous user's lists, instead of clearing the whole cache. That avoids the demo role-switch flash.
+  - `?next=` is followed only inside the user's own area, so it can't be used as an open redirect.
+  - Snapshots and the CSV export are fetched with the token as blobs, because an `<img src>` can't send a header.
+- **Alternatives:** httpOnly refresh cookie (safer against XSS, but needs CSRF protection and a cookie path that works behind the Vite proxy and Caddy; noted for Phase 7 hardening); refreshing on a timer (still needs the 401 path).
+- **Consequences:** an XSS bug could read the tokens. React escapes everything it renders and the app never injects raw HTML; a Content-Security-Policy on the served app comes with Caddy in Phase 8. Access tokens live 15 minutes.
+
+## D29. Analytics in SQL, IST, and demo logins
+
+- **Context:** brief §3, §9, §13. The admin needs busiest hours, average visit, overstay rate, frequent visitors and vehicles inside. The public demo needs one-click logins.
+- **Decision:**
+  - `GET /analytics/overview?days=` runs a few read-only SQL queries, bucketed by **IST** hour and day (`AT TIME ZONE 'Asia/Kolkata'`). Every hour and every day is returned, with zeros where nothing happened.
+  - Overstay rate = visits that *entered* in the window and ever reached `overstayed` ÷ visits that entered.
+  - "Inside now" = visitors in `inside / overstayed / escalated`, plus resident cars whose **latest** camera read was an entry.
+  - `GET /demo` returns the three demo accounts and the demo password, **only** when `DEMO_MODE=true` (404 otherwise). Dev compose turns it on; production keeps it off unless deliberately enabled for the public demo.
+  - `POST /demo/reset` and the nightly reset come with the simulator in Phase 7.
+- **Alternatives:** pre-aggregated tables (unnecessary at one society's volume); computing in JavaScript (moves every row over the wire).
+- **Consequences:** the numbers are always live and consistent with the lists. The demo password is public by design in demo mode, so a real society must never run with `DEMO_MODE=true`.
+
+## D30. Seed history goes through the services
+
+- **Context:** brief §13. Screens and charts need 14 days of believable history, and the jobs must find nothing left to repeat.
+- **Decision:**
+  - The seed replays history through the real code paths: `ingestRead` for camera reads, `registerVisit`, `residentDecides` / `guardDecides`, `transitionVisit`, and `reviewEvent` for corrected blurry reads.
+  - Every resident car starts parked inside (one entry the evening before the window), so the first morning exit pairs correctly.
+  - About 1 in 8 visitors overstays, about 1 in 10 is denied or decided by the guard, regular visitors return, and watchlist hits are acknowledged.
+  - A "right now" state is left for the jobs and the demo: cars inside, two overstays (the ladder runs on them live), a visitor waiting for the demo resident (A-101), an unknown car at the barrier, two unclear reads, one open watchlist alert and a guest code.
+  - Visits now store the time they happened as `createdAt`, and `reviewEvent` takes the clock as a parameter, so history isn't stamped "now".
+- **Alternatives:** inserting rows directly (fast, but would skip pairing, approvals and history rows, and the jobs would then "repair" the fake data).
+- **Consequences:** a full reseed takes about 90 seconds and produces about 1,450 reads and 200 visits. The people and plates are the same every run; times are relative to when you run it.
+
+## D31. Tooling notes for Phase 6
+
+- **openapi-typescript 7.13 declares a peer of TypeScript 5**, while the repo uses TypeScript 6. It is a build-time generator only, so `client/package.json` overrides its peer to our TypeScript. The generated `schema.d.ts` type-checks under TS 6, and CI regenerates it to prove it still matches. Revisit when a TS 6-compatible release ships.
+- **Playwright arrived one phase early**, for reproducible screenshots (`npm run screenshots` signs in for real and captures every main screen into `docs/assets/`). Phase 7 adds the three end-to-end journeys to the same setup.
+
 ## Deferred
 
 - **Telegram approvals** (stretch): not built in Phase 4. The approval service already takes a `channel`, so the webhook only needs to call `residentDecides(…, "telegram")`.
 - **Visitor email** ("gets an email with visit details"): done in Phase 5. An approved visitor with an email gets a "visit approved" message (D23).
 - **`demo.nightlyReset` job:** Phase 7, together with demo mode and the simulator.
+- **Demo reset** (`POST /demo/reset`, the admin "Reset demo" button, `demo.nightlyReset`): Phase 7, with the simulator. Phase 6 ships `GET /demo` (one-click logins).
+- **Hindi toggle and Telegram link in the resident profile** (stretch): not built; the profile says Telegram is planned.
+- **httpOnly refresh cookie** instead of localStorage: considered in D28, revisit in Phase 7 hardening.

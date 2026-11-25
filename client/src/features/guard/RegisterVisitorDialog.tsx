@@ -195,7 +195,7 @@ function RegisterForm({ target, onDone }: { target: RegisterTarget; onDone: () =
               {...p}
               value={phone}
               inputMode="tel"
-              placeholder="98765 43210"
+              placeholder="10-digit number"
               onChange={(e) => {
                 setPhone(e.target.value);
               }}

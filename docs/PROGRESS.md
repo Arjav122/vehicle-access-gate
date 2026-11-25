@@ -154,20 +154,22 @@ Branch `phase-5-escalation-jobs`, from `main`.
 Branch `phase-6-frontend`, from `main`.
 
 Server support the screens need:
-- [ ] `GET /analytics/overview?days=14` (busiest hours, daily traffic, average visit, overstay rate, frequent visitors) and `GET /analytics/inside`, IST
-- [ ] `GET /demo` (one-click demo logins, only when `DEMO_MODE=true`)
-- [ ] Seed: 14 days of closed history + a small "right now" state, written through the services
-- [ ] `npm run openapi` writes `client/openapi.json`; CI fails if it drifts
+- [x] `GET /analytics/overview?days=14` (IST busiest hours, daily traffic, average visit, overstay rate, frequent visitors) and `GET /analytics/inside` (D29)
+- [x] `GET /demo` (one-click demo logins, only when `DEMO_MODE=true`; on in dev compose)
+- [x] Seed: 14 days of closed history + a "right now" state, written through the services (D30): about 1,458 camera reads and 200 visits; visits keep the time they happened as `createdAt`
+- [x] `npm run openapi` writes `client/openapi.json`; `npm run api:types` writes `src/lib/schema.d.ts`; CI fails on drift
 
 Client:
-- [ ] Tooling: Tailwind, shadcn-style components (Radix), TanStack Query, React Router, Recharts, sonner, lucide-react, IBM Plex Sans
-- [ ] Design system: CSS-variable tokens, light + dark, IND-strip blue accent, status colours with words; `PlateChip`
-- [ ] API client from generated types (openapi-typescript + openapi-fetch), tokens in memory + localStorage, refresh on 401
-- [ ] One Socket.io connection per tab; events invalidate queries; refetch after reconnect
-- [ ] Landing, login + demo buttons, role-checked lazy routes, 404 + error pages
-- [ ] Guard console: arrivals · waiting · alerts/review/call tasks; inside counter; register-visitor dialog (`?register=&event=`), guest code, manual entry/exit
-- [ ] Resident app: approvals with countdown, guest passes, history, profile
-- [ ] Admin: overview analytics (+ "view as table"), visits, resource tables, checks, notifications, audit log, settings
-- [ ] Vitest + Testing Library tests; lint, types, build
-- [ ] Screenshots in `docs/assets/`; decisions; `docs/learn/phase-6.md`
-
+- [x] Tooling: Tailwind v4, Radix, TanStack Query, React Router, Recharts, sonner, lucide-react, IBM Plex Sans (D31: openapi-typescript peer override)
+- [x] Design system: CSS-variable tokens, light + dark, IND-strip blue accent, status colours with words + icons; `PlateChip` (D27)
+- [x] Typed API client, tokens in memory + localStorage, single-flight refresh on 401 (D28)
+- [x] One Socket.io connection per tab; events invalidate queries; refetch after reconnect (D26)
+- [x] Landing, login + demo buttons, role-checked lazy routes, 404 + error pages
+- [x] Guard console: arrivals · waiting · attention (three columns from 1280 px, tabs below); inside counter; register visitor (`?register=&event=`), guest code, guard decision after timeout, manual entry/exit, alerts, review queue, call tasks
+- [x] Resident app: approvals with countdown, guest passes (code shown once), history, profile
+- [x] Admin: overview analytics (+ "View as table"), visits, gate events + CSV, resource CRUD (flats, residents, vehicles, guards, gates + cameras, watchlist), checks, notifications, audit log, settings
+- [x] Tests: client **42 passing** (Vitest + Testing Library); server **593 passing** (9 new for analytics + demo)
+- [x] Verified by hand in the browser: guard registers an unknown car → resident approves on a phone → guard console updates live (socket) and the car moves inside
+- [x] Screenshots of every main screen in `docs/assets/` (`npm run screenshots`, Playwright against the running stack)
+- [x] `docs/architecture.md` (system, frontend, design system), decisions D26–D31, `docs/learn/phase-6.md`
+- [ ] Deferred: demo reset button + `POST /demo/reset` → Phase 7; Hindi toggle and Telegram link (stretch)

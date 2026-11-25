@@ -16,7 +16,8 @@
     "format:check": "prettier --check .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "api:types": "openapi-typescript openapi.json -o src/lib/schema.d.ts"
+    "api:types": "openapi-typescript openapi.json -o src/lib/schema.d.ts",
+    "screenshots": "playwright test e2e/screenshots.spec.ts"
   },
   "prettier": {
     "printWidth": 100
@@ -40,6 +41,7 @@
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
+    "@playwright/test": "1.65.1",
     "@tailwindcss/vite": "4.3.5",
     "@testing-library/dom": "10.4.2",
     "@testing-library/jest-dom": "8.0.0",
