@@ -4,7 +4,7 @@ The brief is in [`CLAUDE.md`](../CLAUDE.md). Update this file at the start and e
 
 | Phase | Name | Branch | Status | PR |
 |---|---|---|---|---|
-| 0 | Safety, cleanup, foundation | `phase-0-foundation` | 🟡 In progress: foundation built; waiting on Docker Desktop for the compose check, then push + PR | — |
+| 0 | Safety, cleanup, foundation | `phase-0-foundation` | 🟡 In progress: built and verified locally; waiting for owner OK to push + open the PR | — |
 | 1 | Server core, database, auth | `phase-1-server-core` | ⚪ Not started | — |
 | 2 | Gate event engine | `phase-2-gate-events` | ⚪ Not started | — |
 | 3 | ANPR worker | `phase-3-anpr-worker` | ⚪ Not started | — |
@@ -43,7 +43,9 @@ The brief is in [`CLAUDE.md`](../CLAUDE.md). Update this file at the start and e
 - [x] Write `docs/decisions.md` D1–D7
 - [x] Write `docs/learn/phase-0.md`
 - [x] Verify locally: server and client lint, format, typecheck, tests (+ client build); anpr ruff + pytest on Python 3.12; API and Vite proxy answer `/api/health`
-- [ ] Verify: `docker compose up --build` starts cleanly (blocked: Docker Desktop crashes on start on this machine)
-- [ ] Verify: gitleaks scan of the full history (needs Docker)
+- [x] Verify: `docker compose up --build --wait` starts all four services healthy; API, Vite proxy, web page and Mailpit answer (Postgres 17.12)
+- [x] Fix: client container could not write Vite's temp config as the non-root user, and had no healthcheck so compose still said "healthy". Both Dockerfiles now give `/app` to `node`; the client has a healthcheck, so `--wait` and the CI smoke test catch it
+- [x] Verify: gitleaks over the full history: 6 commits, no leaks. (The working-tree scan flags only the gitignored local `.env`, never committed.)
+- [ ] Not verified yet: live reload of `server/src` edits through the Docker bind mount on Windows (checked in Phase 1)
 - [ ] Owner: confirm the Supabase Postgres major version (D3)
 - [ ] Push `main` + `phase-0-foundation` + tag `v1-original`, switch the GitHub default branch to `main`, open the PR, CI green (after owner OK)
