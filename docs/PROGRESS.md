@@ -6,7 +6,7 @@ The brief is in [`CLAUDE.md`](../CLAUDE.md). Update this file at the start and e
 |---|---|---|---|---|
 | 0 | Safety, cleanup, foundation | `phase-0-foundation` | 🟢 PR open, CI green; waiting for owner review + merge | [#1](https://github.com/Arjav122/vehicle-access-gate/pull/1) |
 | 1 | Server core, database, auth | `phase-1-server-core` | 🟢 PR open (stacked on #1), CI green; waiting for owner review + merge | [#2](https://github.com/Arjav122/vehicle-access-gate/pull/2) |
-| 2 | Gate event engine | `phase-2-gate-events` | 🟡 Built and tested; PR next (stacked on #2) | — |
+| 2 | Gate event engine | `phase-2-gate-events` | 🟢 PR open (stacked on #2), CI green; waiting for owner review + merge | [#3](https://github.com/Arjav122/vehicle-access-gate/pull/3) |
 | 3 | ANPR worker | `phase-3-anpr-worker` | ⚪ Not started | — |
 | 4 | Visitors, approvals, guest passes, real time | `phase-4-visitors-approvals` | ⚪ Not started | — |
 | 5 | Escalation, notifications, scheduled jobs | `phase-5-escalation-jobs` | ⚪ Not started | — |
@@ -93,5 +93,5 @@ Branch `phase-2-gate-events`, stacked on `phase-1-server-core` (retarget to `mai
 - [x] Tests: **436 passing**; `services/` coverage 96.8% lines / 86.3% branches
 - [x] Docker: snapshot volume; real camera upload against the seeded stack (resident matched to A-202 with snapshot, retry → duplicate, watchlist → alert + review)
 - [x] Docs: decisions D14–D16, `docs/learn/phase-2.md`
-- [ ] PR opened, CI green
-- [ ] Owner: merge #1 → #2 → this PR
+- [x] Opened [PR #3](https://github.com/Arjav122/vehicle-access-gate/pull/3) (base `phase-1-server-core`); all 5 CI jobs green on the first run
+- [ ] Owner: merge #1 → #2 → #3
