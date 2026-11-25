@@ -5,7 +5,7 @@ The brief is in [`CLAUDE.md`](../CLAUDE.md). Update this file at the start and e
 | Phase | Name | Branch | Status | PR |
 |---|---|---|---|---|
 | 0 | Safety, cleanup, foundation | `phase-0-foundation` | 🟢 PR open, CI green; waiting for owner review + merge | [#1](https://github.com/Arjav122/vehicle-access-gate/pull/1) |
-| 1 | Server core, database, auth | `phase-1-server-core` | 🟡 In progress (branched from `phase-0-foundation` because PR #1 is not merged yet) | — |
+| 1 | Server core, database, auth | `phase-1-server-core` | 🟢 PR open (stacked on #1), CI green; waiting for owner review + merge | [#2](https://github.com/Arjav122/vehicle-access-gate/pull/2) |
 | 2 | Gate event engine | `phase-2-gate-events` | ⚪ Not started | — |
 | 3 | ANPR worker | `phase-3-anpr-worker` | ⚪ Not started | — |
 | 4 | Visitors, approvals, guest passes, real time | `phase-4-visitors-approvals` | ⚪ Not started | — |
@@ -71,4 +71,6 @@ Branch `phase-1-server-core`, stacked on `phase-0-foundation` (retarget to `main
 - [x] Tests against a real Postgres test DB: 265 tests, every role on every route; `services/` line coverage 98.7% (threshold 80%)
 - [x] CI: server job gets a Postgres service container; compose smoke test seeds and signs in as each demo role
 - [x] Docker dev: migrations applied on start; live reload works on Windows (polling; Phase 0 open item closed)
-- [ ] `docs/decisions.md`, `docs/learn/phase-1.md`, PROGRESS updated; PR opened
+- [x] `docs/decisions.md` (D8–D13), `docs/learn/phase-1.md`, PROGRESS updated
+- [x] Opened [PR #2](https://github.com/Arjav122/vehicle-access-gate/pull/2) (base `phase-0-foundation`); all 5 CI jobs green after one fix (Prettier was checking the generated Prisma client; fixed with `server/.prettierignore`)
+- [ ] Owner: merge #1, then #2 (base switched to `main` first)
