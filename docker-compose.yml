@@ -42,6 +42,10 @@ services:
       SMTP_PORT: "1025"
       HOST: 0.0.0.0
       PORT: "4000"
+      # Dev-only default so `docker compose exec server npm run seed` works out of the box.
+      DEMO_PASSWORD: ${DEMO_PASSWORD:-demo-password-change-me}
+      # File-change events do not cross a Windows -> Docker bind mount; let tsx watch poll.
+      CHOKIDAR_USEPOLLING: "true"
     ports:
       - "127.0.0.1:4000:4000"
     volumes:

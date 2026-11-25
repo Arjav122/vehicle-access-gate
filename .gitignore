@@ -45,3 +45,6 @@ anpr/models/
 Thumbs.db
 .vscode/
 .idea/
+
+# --- Generated code ---
+server/generated/
