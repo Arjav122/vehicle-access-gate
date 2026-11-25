@@ -8,8 +8,8 @@ The brief is in [`CLAUDE.md`](../CLAUDE.md). Update this file at the start and e
 | 1 | Server core, database, auth | `phase-1-server-core` | ✅ Merged into `main` | [#2](https://github.com/Arjav122/vehicle-access-gate/pull/2) |
 | 2 | Gate event engine | `phase-2-gate-events` | ✅ Merged into `main` | [#3](https://github.com/Arjav122/vehicle-access-gate/pull/3) |
 | 3 | ANPR worker | `phase-3-anpr-worker` | ✅ Merged into `main` | [#4](https://github.com/Arjav122/vehicle-access-gate/pull/4) |
-| 4 | Visitors, approvals, guest passes, real time | `phase-4-visitors-approvals` | 🟡 Built and tested; PR next | — |
-| 5 | Escalation, notifications, scheduled jobs | `phase-5-escalation-jobs` | ⚪ Not started | — |
+| 4 | Visitors, approvals, guest passes, real time | `phase-4-visitors-approvals` | ✅ Merged into `main` | [#5](https://github.com/Arjav122/vehicle-access-gate/pull/5) |
+| 5 | Escalation, notifications, scheduled jobs | `phase-5-escalation-jobs` | 🟡 In progress | — |
 | 6 | Frontend | `phase-6-frontend` | ⚪ Not started | — |
 | 7 | Simulator, hardening, end-to-end tests | `phase-7-simulator-hardening` | ⚪ Not started | — |
 | 8 | Docker and deployment | `phase-8-deployment` | ⚪ Not started | — |
@@ -130,4 +130,21 @@ Branch `phase-4-visitors-approvals`, from `main`.
 - [x] Tests: **523 passing** (15 new Phase 4 scenarios with real Socket.io clients: the full unknown-visitor path, double-tap race, timeout + guard, guest passes, settings, masking, socket auth); `services/` coverage 96.4% lines
 - [x] Docker: rebuilt; jobs start; `/socket.io` answers directly and through the Vite proxy
 - [ ] Deferred: Telegram approvals (stretch); visitor email → Phase 5 notifications
-- [ ] PR opened, CI green, merged into `main`
+- [x] [PR #5](https://github.com/Arjav122/vehicle-access-gate/pull/5) opened, CI green, merged into `main`
+
+## Phase 5 — Escalation, notifications, scheduled jobs
+
+Branch `phase-5-escalation-jobs`, from `main`.
+
+- [x] Notification outbox: `queueEmail` (idempotency key, `ON CONFLICT DO NOTHING`), HTML + text templates (escaped, IST times), Nodemailer SMTP (Mailpit in dev) (D23)
+- [x] Dispatcher: `FOR UPDATE SKIP LOCKED`, backoff 1, 2, 4 … 60 min, `failed` after 5 attempts with the last error
+- [x] Escalation ladder: pure `dueSteps` + `runLadder(now)`: overstay emails at the limit, reminder +30 min, call-the-resident task +60 min; any exit resolves the task `vehicle_left` (D24)
+- [x] `GET /escalations` (full resident phones), `POST /escalations/:id/resolve` (once; `escalation.created` / `escalation.resolved` events)
+- [x] Reconciliation (exits without entries, entries never closed, stale visits; flagged once) + `GET /reconciliation`, `POST /reconciliation/:id/resolve`; delivery log `GET /notifications` (D25)
+- [x] Retention: visitor data erased past the retention period (not while a visit is open), old emails redacted, old snapshots deleted
+- [x] "Visit approved" email to the visitor
+- [x] `jobs.ts`: approvals.expire 15 s, escalation.tick and notifications.dispatch every minute, reconciliation 03:00 IST, retention 03:30 IST (`RUN_JOBS=true`)
+- [x] Tests: **573 passing**, 25 of them new in Phase 5 with a mocked clock (every ladder step exactly once, outage catch-up, racing runs, retries/backoff, racing dispatchers, reconciliation, retention, APIs); `services/` coverage 96.6% lines, 86.8% branches
+- [x] Docker: rebuilt; all five jobs start; a real "visit approved" email (HTML + text) arrived in Mailpit through the dispatcher
+- [ ] Deferred: `demo.nightlyReset` → Phase 7 (with demo mode); Telegram (stretch)
+
