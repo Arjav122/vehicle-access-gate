@@ -4,11 +4,11 @@ The brief is in [`CLAUDE.md`](../CLAUDE.md). Update this file at the start and e
 
 | Phase | Name | Branch | Status | PR |
 |---|---|---|---|---|
-| 0 | Safety, cleanup, foundation | `phase-0-foundation` | 🟢 PR open, CI green; waiting for owner review + merge | [#1](https://github.com/Arjav122/vehicle-access-gate/pull/1) |
-| 1 | Server core, database, auth | `phase-1-server-core` | 🟢 PR open (stacked on #1), CI green; waiting for owner review + merge | [#2](https://github.com/Arjav122/vehicle-access-gate/pull/2) |
-| 2 | Gate event engine | `phase-2-gate-events` | 🟢 PR open (stacked on #2), CI green; waiting for owner review + merge | [#3](https://github.com/Arjav122/vehicle-access-gate/pull/3) |
-| 3 | ANPR worker | `phase-3-anpr-worker` | 🟢 PR open (stacked on #3), CI green; webcam test passed; waiting for merge | [#4](https://github.com/Arjav122/vehicle-access-gate/pull/4) |
-| 4 | Visitors, approvals, guest passes, real time | `phase-4-visitors-approvals` | ⚪ Not started | — |
+| 0 | Safety, cleanup, foundation | `phase-0-foundation` | ✅ Merged into `main` | [#1](https://github.com/Arjav122/vehicle-access-gate/pull/1) |
+| 1 | Server core, database, auth | `phase-1-server-core` | ✅ Merged into `main` | [#2](https://github.com/Arjav122/vehicle-access-gate/pull/2) |
+| 2 | Gate event engine | `phase-2-gate-events` | ✅ Merged into `main` | [#3](https://github.com/Arjav122/vehicle-access-gate/pull/3) |
+| 3 | ANPR worker | `phase-3-anpr-worker` | ✅ Merged into `main` | [#4](https://github.com/Arjav122/vehicle-access-gate/pull/4) |
+| 4 | Visitors, approvals, guest passes, real time | `phase-4-visitors-approvals` | 🟡 Built and tested; PR next | — |
 | 5 | Escalation, notifications, scheduled jobs | `phase-5-escalation-jobs` | ⚪ Not started | — |
 | 6 | Frontend | `phase-6-frontend` | ⚪ Not started | — |
 | 7 | Simulator, hardening, end-to-end tests | `phase-7-simulator-hardening` | ⚪ Not started | — |
@@ -115,3 +115,19 @@ Branch `phase-3-anpr-worker`, stacked on `phase-2-gate-events`.
 - [ ] **Owner (for real numbers):** collect labelled photos (`anpr/DATASET.md`), then `python eval/evaluate.py --data …`
 - [ ] Deferred: `anpr/Dockerfile` with the production images in Phase 8
 - [x] Opened [PR #4](https://github.com/Arjav122/vehicle-access-gate/pull/4) (base `phase-2-gate-events`); all 5 CI jobs green, including real-detector tests with the model downloaded and hash-checked in CI
+
+## Phase 4 — Visitors, approvals, guest passes, real time
+
+Branch `phase-4-visitors-approvals`, from `main`.
+
+- [x] Visitor registration `POST /visits` (categories, optional waiting-car read; registering the same car twice → 409)
+- [x] Approvals: locked row, first answer wins, same answer 200 / different 409; clock checked on every answer; 15 s `approvals.expire` job; guard fallback `POST /visits/:id/decision` only after the timeout (D20)
+- [x] Approving a registered waiting car lets it in at once; otherwise the visit waits as approved for a camera read or `POST /visits/:id/enter`
+- [x] `GET /visits` (phones masked; residents see their own flats), `GET /visits/:id`, manual `enter` / `exit`; `GET /approvals`, `POST /approvals/:id/decision`
+- [x] Guest passes: create (code shown once, HMAC stored), revoke, list, redeem by code; plate match at the entry camera admits the car; uses counted with a conditional UPDATE (D21)
+- [x] Settings `GET/PATCH /settings` (audited); limits and timeout used everywhere through `effectiveSettings`
+- [x] Socket.io real time: token auth, rooms `staff` / `user:<id>`, events published after commit: `gate_event.created`, `alert.created`, `approval.requested/decided/timed_out`, `visit.updated` (D22)
+- [x] Tests: **523 passing** (15 new Phase 4 scenarios with real Socket.io clients: the full unknown-visitor path, double-tap race, timeout + guard, guest passes, settings, masking, socket auth); `services/` coverage 96.4% lines
+- [x] Docker: rebuilt; jobs start; `/socket.io` answers directly and through the Vite proxy
+- [ ] Deferred: Telegram approvals (stretch); visitor email → Phase 5 notifications
+- [ ] PR opened, CI green, merged into `main`

@@ -151,3 +151,42 @@ One section per decision: context, decision, alternatives, consequences. Newest 
   - Every voted read is written to the lane's SQLite buffer (`buffer-entry.sqlite`, `buffer-exit.sqlite`; WAL, `synchronous=FULL`) **before** sending, and the queue drains oldest-first. An outage stops the drain without losing anything; a permanent 4xx moves the read to a `rejected` table so it cannot block the queue.
   - `server/prisma/webcamDevices.ts` (`npm run webcam:devices`) creates or reuses gate "Laptop webcam" with an entry and an exit device, rotates both keys, and writes them into `anpr/.env`, keeping every other line. Like the seed, it refuses a non-local database.
 - **Consequences:** a recording replayed twice produces the same capture times, so the server's idempotency turns the second run into `duplicate`s. The simulator (Phase 7) must skip the "Laptop webcam" devices (brief §13).
+
+## D20. Approvals: one locked row, first answer wins, the clock checked twice
+
+- **Context:** brief §10.4. Two residents of a flat may tap at the same moment; answers can arrive after the timeout; the guard needs a fallback.
+- **Decision:** one `approvals` row per visit (unique `visit_id`). Every answer locks it `FOR UPDATE`, so concurrent taps are served one after the other:
+  - **Same answer again:** 200, nothing changes.
+  - **Different answer:** 409; the first answer counts.
+  - **Late answer:** each answer checks the clock itself (`now ≥ expires_at`), marks the approval `timed_out`, and returns 409 "the guard decides now". It doesn't wait for the job.
+  - **Overdue approvals:** a node-cron job every 15 s (`approvals.expire`, `FOR UPDATE SKIP LOCKED`) marks them `timed_out` and tells staff and the flat in real time.
+  - **The guard's decision:** allowed (`POST /visits/:id/decision`) only once the time is up; while residents can still answer, the guard gets 409 with the seconds left. The approval stays `timed_out` and records the guard as the decider (`channel: guard`).
+  - **The waiting car:** if the guard registered the visitor against the waiting car's read, approving lets that car in at once (the read becomes the visit's entry). Otherwise the visit waits as `approved` for a camera read or a manual entry.
+- **Alternatives:** optimistic version numbers (also fine, but row locks are simpler to explain); only the job enforcing the timeout (a late tap could slip in between runs).
+- **Consequences:** a race test proves two simultaneous answers produce exactly one decision and one history row. Telegram answers (stretch) will call the same function with `channel: telegram`.
+
+## D21. Guest passes: HMAC'd one-time codes, uses counted in SQL
+
+- **Context:** brief §10.5.
+- **Decision:**
+  - **What a pass is:** a plate and/or an 8-character code from `ABCDEFGHJKMNPQRSTUVWXYZ23456789` (no 0/O, 1/I/L, so it can be read aloud). The code is returned once and stored as HMAC-SHA256 with a key derived from the server secret.
+  - **Counting uses:** a single conditional `UPDATE … SET use_count = use_count + 1 WHERE use_count < max_uses AND revoked_at IS NULL AND valid_from <= t AND valid_until > t`. A pass can never be over-used, even when two gates race. The CHECK `use_count <= max_uses` is the backstop.
+  - **At the gate:** a plate match creates the visit already `approved` and moves it `inside` with the camera's capture time. Passes are candidates on the entry lane only. The guard can also type a code (`POST /guest-passes/redeem`).
+  - **Wrong answers:** an unknown code is 404; an expired, not-yet-valid, used-up or revoked pass is 409 with the reason in words.
+- **Consequences:** guards never see codes, and residents see a code only at creation. Phase 6's resident app must show it prominently once ("code shown once").
+
+## D22. Real time: Socket.io rooms, publish after commit, events tell screens to refetch
+
+- **Context:** brief §9, §12.
+- **Decision:**
+  - **Rooms:** one Socket.io server on the same HTTP server and origin (`/socket.io`, proxied by Vite in dev and Caddy in prod), with rooms `staff` and `user:<id>`.
+  - **Auth:** the access token goes in the handshake (`auth.token`); a bad or expired token is refused with `unauthorized`.
+  - **Events:** `{ type, at, data }`, sent by the route after its transaction commits. A failed send is logged, never fatal.
+  - **Audiences:** gate events and alerts go to staff only. Approval and visit events go to staff plus every active resident of that flat (looked up per event), so a neighbour never sees another flat's visitors.
+- **Alternatives:** server-sent events (one-way only); polling (slower and wasteful); the Redis adapter (only needed with 2+ instances, D12).
+- **Consequences:** the client treats events as "refetch this query" signals (brief §12), so a missed event only delays a screen until the next refetch or reconnect.
+
+## Deferred
+
+- **Telegram approvals** (stretch): not built in Phase 4. The approval service already takes a `channel`, so the webhook only needs to call `residentDecides(…, "telegram")`.
+- **Visitor email** ("gets an email with visit details"): comes with the notification outbox in Phase 5.

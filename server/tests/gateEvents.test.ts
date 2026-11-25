@@ -408,6 +408,7 @@ describe("races", () => {
         matchDistance: 0,
         vehicleId: null,
         visitId: visit.id,
+        guestPassId: null,
         needsReview: false,
         reviewReason: null,
         watchlist: null,
