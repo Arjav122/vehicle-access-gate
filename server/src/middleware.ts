@@ -6,12 +6,14 @@ import type { ErrorRequestHandler, Request, RequestHandler } from "express";
 import { rateLimit } from "express-rate-limit";
 import helmet from "helmet";
 import { pino } from "pino";
+import multer from "multer";
 import { pinoHttp } from "pino-http";
 import { z } from "zod";
 import { config } from "./config.js";
 import { describeDbError, prisma } from "./db.js";
 import type { LaneDirection, Role } from "../generated/prisma/enums.js";
 import { verifyAccessToken } from "./services/auth.js";
+import { IllegalTransitionError } from "./services/visitState.js";
 
 // ---------- Errors ----------
 
@@ -131,6 +133,14 @@ function limiter(limit: number, message: string, key?: (req: Request) => string)
       res.setHeader("Retry-After", String(Math.ceil(options.windowMs / 1000)));
       res.status(429).json({ detail: message });
     },
+  });
+}
+
+/** Camera uploads: per device key (600/min by default). */
+export function deviceRateLimit(): RequestHandler {
+  return limiter(config.DEVICE_RATE_LIMIT, "Too many reads from this camera. Slow down.", (req) => {
+    const key = req.headers["x-device-key"];
+    return `device:${typeof key === "string" ? hashDeviceKey(key) : "none"}`;
   });
 }
 
@@ -260,6 +270,18 @@ export const notFoundHandler: RequestHandler = () => {
 export const errorHandler: ErrorRequestHandler = (err: unknown, req, res, _next) => {
   if (err instanceof HttpError) {
     res.set(err.headers).status(err.status).json({ detail: err.message });
+    return;
+  }
+  if (err instanceof IllegalTransitionError) {
+    res.status(409).json({ detail: err.message });
+    return;
+  }
+  if (err instanceof multer.MulterError) {
+    const tooBig = err.code === "LIMIT_FILE_SIZE";
+    const detail = tooBig
+      ? `Snapshot is larger than ${String(config.SNAPSHOT_MAX_BYTES)} bytes`
+      : `Invalid upload: ${err.message}`;
+    res.status(tooBig ? 413 : 422).json({ detail });
     return;
   }
   // Body parser errors (bad JSON, too large) carry a status.

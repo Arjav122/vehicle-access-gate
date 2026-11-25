@@ -5,6 +5,7 @@ import { config } from "./config.js";
 import { prisma } from "./db.js";
 import {
   corsPolicy,
+  deviceRateLimit,
   errorHandler,
   logger,
   loginRateLimits,
@@ -13,10 +14,12 @@ import {
   securityHeaders,
 } from "./middleware.js";
 import { mountDocs } from "./openapi.js";
+import { alertsRouter } from "./routes/alerts.js";
 import { auditLogsRouter } from "./routes/auditLogs.js";
 import { authRouter } from "./routes/auth.js";
 import { devicesRouter } from "./routes/devices.js";
 import { flatsRouter } from "./routes/flats.js";
+import { gateEventsRouter } from "./routes/gateEvents.js";
 import { gatesRouter } from "./routes/gates.js";
 import { guardsRouter } from "./routes/guards.js";
 import { residentsRouter } from "./routes/residents.js";
@@ -34,6 +37,7 @@ export function createApp() {
   app.use(express.json({ limit: config.MAX_REQUEST_BYTES }));
 
   app.use("/api/auth/login", ...loginRateLimits());
+  app.post("/api/gate-events", deviceRateLimit());
 
   const api = express.Router();
   for (const router of [
@@ -46,6 +50,8 @@ export function createApp() {
     gatesRouter,
     devicesRouter,
     watchlistRouter,
+    gateEventsRouter,
+    alertsRouter,
     auditLogsRouter,
   ]) {
     api.use(router);
