@@ -1,6 +1,7 @@
 """Measure the worker on a labelled photo set (see DATASET.md) and write result tables.
 
     python eval/evaluate.py --data eval/data/<set-name> [--name <label>] [--ocr-contrast]
+    python eval/evaluate.py --latency 200       # detector speed only; no labelled photos needed
 
 Reports only what it measured:
   - detection: share of photos with a plate found; AP@0.5 when YOLO box labels exist
@@ -8,6 +9,10 @@ Reports only what it measured:
   - CPU latency of the detector (ONNX FP32) and OCR per crop: median and p95
 Writes eval/results/<name>.md and <name>.json. Nothing is estimated or extrapolated.
 Frame voting and "with server repair" need video clips and are not measured here yet.
+
+--latency N times the detector alone (ONNX FP32, CPU) on one synthetic 1280x720 frame with a
+plate drawn on it, N times after 10 warm-up runs. Inference time depends on the input size, not
+on what the picture shows, so this needs no labels; it says nothing about accuracy.
 """
 
 from __future__ import annotations
@@ -177,6 +182,102 @@ def evaluate(folder: Path, name: str, contrast: bool) -> Report:
     )
 
 
+@dataclass
+class LatencyReport:
+    name: str
+    runs: int
+    input: str
+    detector_ms_median: float
+    detector_ms_p95: float
+    detector_ms_min: float
+    onnxruntime: str
+    machine: str
+    measured_at: str
+
+
+def synthetic_frame(width: int = 1280, height: int = 720) -> np.ndarray:
+    """A grey road scene with one white HSRP-style plate (same drawing as the tests use)."""
+    img = np.full((height, width, 3), 90, np.uint8)
+    cv2.rectangle(img, (300, 200), (980, 620), (40, 40, 160), -1)
+    cv2.rectangle(img, (440, 470), (840, 550), (255, 255, 255), -1)
+    cv2.rectangle(img, (440, 470), (840, 550), (0, 0, 0), 3)
+    cv2.putText(img, "UP16 AB 1234", (478, 525), cv2.FONT_HERSHEY_DUPLEX, 1.25, (0, 0, 0), 3)
+    return img
+
+
+def cpu_name() -> str:
+    """The CPU's marketing name (e.g. "AMD Ryzen 7 4800H"), falling back to platform info."""
+    try:
+        if sys.platform == "win32":
+            import winreg
+
+            key = winreg.OpenKey(
+                winreg.HKEY_LOCAL_MACHINE, r"HARDWARE\DESCRIPTION\System\CentralProcessor\0"
+            )
+            return str(winreg.QueryValueEx(key, "ProcessorNameString")[0]).strip()
+        for line in Path("/proc/cpuinfo").read_text().splitlines():
+            if line.startswith("model name"):
+                return line.split(":", 1)[1].strip()
+    except OSError:
+        pass
+    return platform.processor() or platform.machine()
+
+
+def machine_name() -> str:
+    return " · ".join([cpu_name(), f"{platform.system()} {platform.release()}"])
+
+
+def measure_latency(runs: int, name: str, detector: PlateDetector | None = None) -> LatencyReport:
+    import onnxruntime
+
+    if detector is None:
+        settings = load_settings()
+        detector = PlateDetector(
+            settings.detector_model, settings.detector_input_size, settings.detector_confidence
+        )
+    frame = synthetic_frame()
+    for _ in range(10):  # warm-up: first runs allocate and are slower
+        detector.detect(frame)
+    times: list[float] = []
+    for _ in range(runs):
+        t = time.perf_counter()
+        detector.detect(frame)
+        times.append((time.perf_counter() - t) * 1000)
+    return LatencyReport(
+        name=name,
+        runs=runs,
+        input="synthetic 1280x720 frame, letterboxed to the model input",
+        detector_ms_median=round(statistics.median(times), 1),
+        detector_ms_p95=round(p95(times), 1),
+        detector_ms_min=round(min(times), 1),
+        onnxruntime=onnxruntime.__version__,
+        machine=machine_name(),
+        measured_at=datetime.now(UTC).isoformat(timespec="seconds"),
+    )
+
+
+def latency_markdown(r: LatencyReport) -> str:
+    return "\n".join(
+        [
+            f"# Detector latency: {r.name}",
+            "",
+            "| Metric | Value |",
+            "|---|---|",
+            f"| Detector, ONNX FP32 on CPU, median | {r.detector_ms_median} ms |",
+            f"| Detector p95 | {r.detector_ms_p95} ms |",
+            f"| Detector fastest | {r.detector_ms_min} ms |",
+            f"| Runs (after 10 warm-up) | {r.runs} |",
+            f"| Input | {r.input} |",
+            f"| ONNX Runtime | {r.onnxruntime} |",
+            f"| Machine | {r.machine} |",
+            f"| Measured | {r.measured_at} |",
+            "",
+            "Speed only: this run says nothing about accuracy (that needs labelled photos).",
+            "",
+        ]
+    )
+
+
 def to_markdown(r: Report) -> str:
     ap = f"{r.ap50:.3f}" if r.ap50 is not None else "not measured (no box labels)"
     ocr_lat = f"{r.ocr_ms_median} / {r.ocr_ms_p95}" if r.ocr_ms_median is not None else "n/a"
@@ -203,13 +304,24 @@ def to_markdown(r: Report) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description="Evaluate the ANPR worker on a labelled photo set.")
-    p.add_argument("--data", type=Path, required=True)
+    p.add_argument("--data", type=Path)
     p.add_argument("--name", default=None)
     p.add_argument("--ocr-contrast", action="store_true")
+    p.add_argument("--latency", type=int, metavar="N", help="time the detector N times instead")
     args = p.parse_args(argv)
+    RESULTS.mkdir(exist_ok=True)
+    if args.latency:
+        lat = measure_latency(args.latency, args.name or "latency")
+        (RESULTS / f"{lat.name}.json").write_text(
+            json.dumps(asdict(lat), indent=2) + "\n", encoding="utf-8"
+        )
+        (RESULTS / f"{lat.name}.md").write_text(latency_markdown(lat), encoding="utf-8")
+        print(latency_markdown(lat))
+        return 0
+    if args.data is None:
+        p.error("--data is required (or use --latency N)")
     name = args.name or args.data.name
     report = evaluate(args.data, name, args.ocr_contrast)
-    RESULTS.mkdir(exist_ok=True)
     (RESULTS / f"{name}.json").write_text(
         json.dumps(asdict(report), indent=2) + "\n", encoding="utf-8"
     )

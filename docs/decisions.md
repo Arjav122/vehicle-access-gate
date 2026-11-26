@@ -352,6 +352,21 @@ One section per decision: context, decision, alternatives, consequences. Newest 
   - The httpOnly refresh-cookie idea (D28) stays a documented alternative: moving the refresh token to a cookie needs CSRF protection and adds little while the access token must still live in JavaScript.
   - Prometheus metrics and a load test (stretch) are not built.
 
+## D36. Polish before deployment; only measured numbers in the README
+
+- **Context:** brief §19 puts deployment (Phase 8) before polish (Phase 9). The owner asked to finish and check everything else first (README, docs, testing, GitHub up to date) and deploy afterwards.
+- **Decision:**
+  - Phase 9's work runs first. The release tag `v2.0.0` waits until after deployment, so the release includes the live link.
+  - The README results table holds only numbers produced by runs in this repo:
+    - detector latency, from the new `evaluate.py --latency N` mode: the real ONNX detector on a synthetic 1280×720 frame, with the CPU, ONNX Runtime version and run count recorded next to the numbers;
+    - test counts;
+    - coverage.
+  - Accuracy stays "TBD" until labelled photos exist; the latency file says outright that it says nothing about accuracy.
+  - The demo GIF is recorded from the running app: `npm run demo:frames` (Playwright, real API and real-time updates) and `e2e/frames_to_gif.py` (Pillow, from the ANPR environment). There is no `ffmpeg` on the dev machine, and no new dependency.
+- **Found while recording:** the seed's "right now" visitor could be registered a few seconds in the future (arrival 30 s ago + a 40–90 s guard delay), so its approval showed 3:18 left instead of at most 3:00. `registrationTime()` now clamps to "now", with a regression test.
+- **Found during verification:** one full server test run failed inside a demo reset that ran while the simulator was posting traffic (the reset's `TRUNCATE` failed). Five isolated re-runs passed, and the original error text was lost, so the cause is **not confirmed**. The plausible one is Postgres choosing the `TRUNCATE` as a deadlock victim against an in-flight write. The reset now retries up to five times on SQLSTATE `40P01` (`retryOnDeadlock`, unit-tested); any other error still fails at once.
+- **Consequences:** the GitHub repository is complete and reviewable before anything goes online. `docs/deployment.md` holds the reviewed deployment plan, marked "not deployed yet".
+
 ## Deferred
 
 - **Telegram approvals** (stretch): not built in Phase 4. The approval service already takes a `channel`, so the webhook only needs to call `residentDecides(…, "telegram")`.
