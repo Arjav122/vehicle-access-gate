@@ -4,11 +4,18 @@ import { QueryClient } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 type Handler = (...args: unknown[]) => void;
-const fake = vi.hoisted(() => ({
+interface FakeSocket {
+  handlers: Map<string, Handler>;
+  connect: () => void;
+  disconnect: () => void;
+  /** What the client passed as `auth` (a callback that supplies the current token). */
+  authArg: unknown;
+}
+const fake: FakeSocket = vi.hoisted(() => ({
   handlers: new Map<string, Handler>(),
   connect: vi.fn(),
   disconnect: vi.fn(),
-  authArg: undefined as unknown,
+  authArg: null,
 }));
 
 vi.mock("socket.io-client", () => ({
