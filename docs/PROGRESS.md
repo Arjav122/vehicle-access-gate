@@ -10,8 +10,8 @@ The brief is in [`CLAUDE.md`](../CLAUDE.md). Update this file at the start and e
 | 3 | ANPR worker | `phase-3-anpr-worker` | ✅ Merged into `main` | [#4](https://github.com/Arjav122/vehicle-access-gate/pull/4) |
 | 4 | Visitors, approvals, guest passes, real time | `phase-4-visitors-approvals` | ✅ Merged into `main` | [#5](https://github.com/Arjav122/vehicle-access-gate/pull/5) |
 | 5 | Escalation, notifications, scheduled jobs | `phase-5-escalation-jobs` | ✅ Merged into `main` | [#6](https://github.com/Arjav122/vehicle-access-gate/pull/6) |
-| 6 | Frontend | `phase-6-frontend` | 🟡 In progress | — |
-| 7 | Simulator, hardening, end-to-end tests | `phase-7-simulator-hardening` | ⚪ Not started | — |
+| 6 | Frontend | `phase-6-frontend` | ✅ Merged into `main` | [#7](https://github.com/Arjav122/vehicle-access-gate/pull/7) |
+| 7 | Simulator, hardening, end-to-end tests | `phase-7-simulator-hardening` | 🟡 In progress | — |
 | 8 | Docker and deployment | `phase-8-deployment` | ⚪ Not started | — |
 | 9 | Polish, docs, release | `phase-9-release` | ⚪ Not started | — |
 
@@ -173,3 +173,17 @@ Client:
 - [x] Screenshots of every main screen in `docs/assets/` (`npm run screenshots`, Playwright against the running stack)
 - [x] `docs/architecture.md` (system, frontend, design system), decisions D26–D31, `docs/learn/phase-6.md`
 - [ ] Deferred: demo reset button + `POST /demo/reset` → Phase 7; Hindi toggle and Telegram link (stretch)
+- [x] [PR #7](https://github.com/Arjav122/vehicle-access-gate/pull/7) opened, CI green, merged into `main`
+
+## Phase 7 — Simulator, hardening, end-to-end tests
+
+Branch `phase-7-simulator-hardening`, from `main`.
+
+- [ ] Seed as a reusable function (`--no-history` for fast CI); `POST /demo/reset` (admin, demo mode only), admin "Reset demo" button, `demo.nightlyReset` at 04:00 IST
+- [ ] Simulator (`server/src/simulator.ts`): separate process, public API only; rush hours; resident cars, unknown visitors (approve / deny / time out), guest passes, blurry reads, watchlist (max once per 45 min), overstays; a simulated guard; leaves real devices alone (`--leave-devices`); recovers after a demo reset; flags `--api --speed --seed --minutes`
+- [ ] Simulator in docker compose (profile `simulator`)
+- [ ] Hardening review against §10.7 / §10.9: rate limits + Retry-After, body and upload limits, security headers, request ids; tests for anything missing
+- [ ] Playwright journeys against the real stack: (1) resident vehicle entry, (2) unknown visitor approval, (3) overstay escalation
+- [ ] CI: e2e job (compose stack + seed + Playwright), coverage thresholds
+- [ ] Docs: decisions, `docs/learn/phase-7.md`, progress
+

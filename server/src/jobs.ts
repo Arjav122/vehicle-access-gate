@@ -7,10 +7,13 @@
 //   notifications.dispatch  every minute send due emails, retry with backoff
 //   reconciliation.nightly  03:00 IST    find records that don't add up
 //   retention.daily         03:30 IST    erase old visitor data, redact old emails, delete old snapshots
-//   (demo.nightlyReset arrives with demo mode in Phase 7.)
+//   demo.nightlyReset       04:00 IST    only when DEMO_MODE=true: wipe and seed the demo again
+// While a demo reset is running every other job skips its turn (the tables are being refilled).
 import cron from "node-cron";
+import { config } from "./config.js";
 import { logger } from "./middleware.js";
 import { publish } from "./realtime.js";
+import { demoResetRunning, runDemoReset } from "./routes/demo.js";
 import { loadTask } from "./routes/escalations.js";
 import { loadVisit } from "./routes/visits.js";
 import { expireApprovals } from "./services/approvals.js";
@@ -44,6 +47,7 @@ export async function runEscalationTick(now = new Date()): Promise<number> {
 
 function guarded(name: string, job: () => Promise<unknown>): () => Promise<void> {
   return async () => {
+    if (demoResetRunning() && name !== "demo.nightlyReset") return;
     try {
       const result = await job();
       logger.debug({ job: name, result }, "scheduled job done");
@@ -82,9 +86,16 @@ export function startJobs(mailer: Mailer = smtpMailer()): { stop: () => void } {
       opts("retention.daily"),
     ),
   ];
-  logger.info(
-    "scheduled jobs started: approvals.expire, escalation.tick, notifications.dispatch, reconciliation.nightly, retention.daily",
-  );
+  if (config.DEMO_MODE) {
+    tasks.push(
+      cron.schedule(
+        "0 0 4 * * *",
+        guarded("demo.nightlyReset", () => runDemoReset()),
+        opts("demo.nightlyReset"),
+      ),
+    );
+  }
+  logger.info(`scheduled jobs started: ${tasks.map((t) => t.name).join(", ")}`);
   return {
     stop: () => {
       for (const task of tasks) void task.stop();
