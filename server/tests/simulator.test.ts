@@ -128,7 +128,11 @@ describe("a real run against the API", () => {
   });
 
   afterAll(async () => {
-    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await new Promise<void>((resolve) =>
+      server.close(() => {
+        resolve();
+      }),
+    );
     config.DEMO_PASSWORD = saved.password;
     config.LOGIN_RATE_LIMIT_PER_IP = saved.ip;
     config.LOGIN_RATE_LIMIT_PER_ACCOUNT = saved.account;

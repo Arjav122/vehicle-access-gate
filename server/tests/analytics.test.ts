@@ -206,7 +206,7 @@ describe("demo reset", () => {
     expect((await guard.post("/api/demo/reset", { history: false })).status).toBe(403);
   });
 
-  it("starts in the background (202), refuses a second run (409), then the demo logins work", async () => {
+  it("starts in the background (202), runs one at a time, then the demo logins work", async () => {
     config.DEMO_MODE = true;
     config.DEMO_PASSWORD = "demo-pass";
     const api = makeApi();
@@ -214,7 +214,9 @@ describe("demo reset", () => {
     const res = await admin.post("/api/demo/reset", { history: false });
     expect(res.status).toBe(202);
     expect(demoResetRunning()).toBe(true);
-    expect((await admin.post("/api/demo/reset", { history: false })).status).toBe(409);
+    // One at a time. (Asked directly: over HTTP the second request can be refused with 401
+    // instead, because the running reset has already deleted the admin's account.)
+    expect(await runDemoReset({ history: false })).toBe(false);
     expect((await api.as().get("/api/demo")).body.resetting).toBe(true);
 
     await vi.waitFor(

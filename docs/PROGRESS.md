@@ -179,11 +179,13 @@ Client:
 
 Branch `phase-7-simulator-hardening`, from `main`.
 
-- [ ] Seed as a reusable function (`--no-history` for fast CI); `POST /demo/reset` (admin, demo mode only), admin "Reset demo" button, `demo.nightlyReset` at 04:00 IST
-- [ ] Simulator (`server/src/simulator.ts`): separate process, public API only; rush hours; resident cars, unknown visitors (approve / deny / time out), guest passes, blurry reads, watchlist (max once per 45 min), overstays; a simulated guard; leaves real devices alone (`--leave-devices`); recovers after a demo reset; flags `--api --speed --seed --minutes`
-- [ ] Simulator in docker compose (profile `simulator`)
-- [ ] Hardening review against §10.7 / §10.9: rate limits + Retry-After, body and upload limits, security headers, request ids; tests for anything missing
-- [ ] Playwright journeys against the real stack: (1) resident vehicle entry, (2) unknown visitor approval, (3) overstay escalation
-- [ ] CI: e2e job (compose stack + seed + Playwright), coverage thresholds
-- [ ] Docs: decisions, `docs/learn/phase-7.md`, progress
-
+- [x] Seed as a reusable function (`seedSociety`, `--no-history`); `POST /demo/reset` (admin, demo mode only, 202 + background, one at a time); admin "Reset demo" button; login page notices a running reset; `demo.nightlyReset` at 04:00 IST (D32)
+- [x] Simulator (`server/src/simulator.ts`): separate process, public API only; IST rush hours (Poisson arrivals) or `--rate`; resident cars, unknown visitors (approve / deny / ignored → guard decides), guest passes, blurry reads, watchlist (max once per 45 min), real-time overstays; simulated guard rounds; leaves `--leave-devices` alone; starts over after a demo reset; `--api --speed --seed --minutes --rate` (D33)
+- [x] Simulator in docker compose (profile `simulator`); seed folder mounted so the reset uses the current seed
+- [x] Hardening review against §10.7 / §10.9 (D35): new tests for the per-address sign-in limit and the per-camera read limit; `trust proxy` + served-app CSP → Phase 8
+- [x] Playwright journeys against the real stack: (1) resident vehicle entry, (2) unknown visitor approval, (3) overstay escalation incl. the email in Mailpit; all three pass locally (journey 3 ≈ 3.5 min with short limits) (D34)
+- [x] CI: the compose job runs the journeys with short time limits; client coverage thresholds on `src/lib` + `components/ui` (75 / 75 / 75 / 60, measured 77 / 65 / 77 / 78)
+- [x] Tests: server **612 passing** (services/ coverage 96.6% lines, 86.4% branches); client **48 passing**; 3 Playwright journeys passing
+- [x] Verified by hand: admin presses Reset demo → signed out → login says the reset is running → becomes usable again by itself
+- [x] Docs: decisions D32–D35, `docs/learn/phase-7.md`, webcam guide note about resets
+- [ ] Deferred (stretch): Prometheus metrics, load test, static INT8 quantisation
