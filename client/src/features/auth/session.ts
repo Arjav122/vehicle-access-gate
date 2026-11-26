@@ -76,5 +76,7 @@ export function useDemo() {
     },
     staleTime: Infinity,
     retry: 3,
+    // While a demo reset runs, check every 5 s so the page knows when signing in works again.
+    refetchInterval: (q) => (q.state.data?.resetting ? 5000 : false),
   });
 }

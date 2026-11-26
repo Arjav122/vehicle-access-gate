@@ -15,7 +15,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
+    "test": "vitest run --coverage",
     "api:types": "openapi-typescript openapi.json -o src/lib/schema.d.ts",
     "screenshots": "playwright test e2e/screenshots.spec.ts",
     "e2e": "playwright test e2e/journeys.spec.ts"
@@ -52,6 +52,7 @@
     "@types/react": "19.3.2",
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "6.3.0",
+    "@vitest/coverage-v8": "5.1.1",
     "eslint": "10.15.0",
     "eslint-plugin-react-hooks": "7.1.1",
     "eslint-plugin-react-refresh": "0.5.8",

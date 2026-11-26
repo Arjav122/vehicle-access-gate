@@ -27,5 +27,14 @@ export default defineConfig({
     setupFiles: ["./src/test-setup.ts"],
     include: ["src/**/*.test.{ts,tsx}"], // e2e/ is Playwright's
     css: false,
+    // Unit coverage for the shared plumbing and the design-system components; the screens
+    // themselves are covered end to end by the Playwright journeys (e2e/).
+    coverage: {
+      provider: "v8",
+      include: ["src/lib/**", "src/components/ui/**"],
+      exclude: ["src/lib/schema.d.ts"],
+      reporter: ["text-summary"],
+      thresholds: { lines: 75, statements: 75, functions: 75, branches: 60 },
+    },
   },
 });

@@ -20,6 +20,7 @@ const DEMO = {
     { role: "resident", email: "resident@example.com", label: "Priya Sharma" },
     { role: "admin", email: "admin@example.com", label: "Rakesh Khanna" },
   ],
+  resetting: false,
 };
 const TOKENS = { accessToken: "a", refreshToken: "r", tokenType: "Bearer", expiresIn: 900 };
 
@@ -50,6 +51,13 @@ describe("LoginPage", () => {
     });
     expect(getTokens()?.accessToken).toBe("a");
     expect(client.getQueryData(["me"])).toMatchObject({ role: "resident" });
+  });
+
+  it("says so while the demo is being reset, and disables the demo buttons", async () => {
+    mockApi({ "GET /api/demo": { ...DEMO, resetting: true } });
+    renderAt(<LoginPage />, { path: "/login" });
+    expect(await screen.findByRole("status")).toHaveTextContent(/being reset/);
+    expect(screen.getByRole("button", { name: /Continue as guard/ })).toBeDisabled();
   });
 
   it("shows the server's message for wrong credentials", async () => {

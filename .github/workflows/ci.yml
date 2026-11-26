@@ -98,8 +98,13 @@ jobs:
       - run: pytest
 
   compose:
-    name: docker compose smoke test
+    name: docker compose smoke test + end-to-end journeys
     runs-on: ubuntu-latest
+    # Short time limits so the overstay journey (limit → overstay → call task) takes minutes.
+    env:
+      VISIT_LIMIT_CAB_MINUTES: "1"
+      OVERSTAY_REMINDER_MINUTES: "1"
+      OVERSTAY_ESCALATION_MINUTES: "2"
     steps:
       - uses: actions/checkout@v7
       - name: Start the dev stack and wait for health checks
@@ -121,6 +126,28 @@ jobs:
               -d "{\"email\":\"$who@example.com\",\"password\":\"demo-password-change-me\"}" > /dev/null
             echo "signed in as $who"
           done
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+      - name: Install Playwright
+        working-directory: client
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: End-to-end journeys (resident car, visitor approval, overstay escalation)
+        working-directory: client
+        run: npm run e2e
+      - name: Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report
+          path: |
+            client/playwright-report
+            client/test-results
+          retention-days: 7
       - name: Logs on failure
         if: failure()
         run: docker compose logs
