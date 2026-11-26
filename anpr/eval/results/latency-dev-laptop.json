@@ -1,0 +1,11 @@
+{
+  "name": "latency-dev-laptop",
+  "runs": 200,
+  "input": "synthetic 1280x720 frame, letterboxed to the model input",
+  "detector_ms_median": 49.1,
+  "detector_ms_p95": 56.1,
+  "detector_ms_min": 39.7,
+  "onnxruntime": "1.32.0",
+  "machine": "AMD Ryzen 7 4800H with Radeon Graphics \u00b7 Windows 11",
+  "measured_at": "2026-11-26T06:01:13+00:00"
+}

@@ -3,6 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { config } from "../src/config.js";
 import { prisma } from "../src/db.js";
+import { isDeadlock, registrationTime, retryOnDeadlock } from "../prisma/seed.js";
 import { demoResetRunning, runDemoReset } from "../src/routes/demo.js";
 import { newDeviceKey } from "../src/routes/devices.js";
 import { inside, istDate, overview } from "../src/services/analytics.js";
@@ -245,4 +246,55 @@ describe("demo reset", () => {
     );
     expect(second).toEqual(first);
   }, 40_000);
+});
+
+describe("seed timing", () => {
+  it("never registers a visitor in the future (regression: approvals showed 3:18 left)", () => {
+    const now = new Date("2026-11-26T06:00:00Z");
+    const arrival = new Date(now.getTime() - 30_000); // the "right now" visitor
+    expect(registrationTime(arrival, 60, now)).toEqual(now);
+    const earlier = new Date(now.getTime() - 3_600_000);
+    expect(registrationTime(earlier, 60, now)).toEqual(new Date(earlier.getTime() + 60_000));
+  });
+});
+
+describe("demo reset under load", () => {
+  const deadlock = () => Object.assign(new Error("deadlock detected"), { code: "40P01" });
+
+  it("recognises a Postgres deadlock however it is wrapped", () => {
+    expect(isDeadlock(deadlock())).toBe(true);
+    expect(isDeadlock(new Error("Raw query failed. Code: `40P01`"))).toBe(true);
+    expect(isDeadlock(new Error("unique constraint failed"))).toBe(false);
+  });
+
+  it("retries a TRUNCATE picked as a deadlock victim, but not other errors", async () => {
+    let calls = 0;
+    const ok = await retryOnDeadlock(
+      () => {
+        calls++;
+        return calls < 3 ? Promise.reject(deadlock()) : Promise.resolve("done");
+      },
+      5,
+      1,
+    );
+    expect(ok).toBe("done");
+    expect(calls).toBe(3);
+
+    let other = 0;
+    await expect(
+      retryOnDeadlock(
+        () => {
+          other++;
+          return Promise.reject(new Error("syntax error"));
+        },
+        5,
+        1,
+      ),
+    ).rejects.toThrow("syntax error");
+    expect(other).toBe(1);
+
+    await expect(retryOnDeadlock(() => Promise.reject(deadlock()), 2, 1)).rejects.toThrow(
+      "deadlock",
+    );
+  });
 });

@@ -11,9 +11,9 @@ The brief is in [`CLAUDE.md`](../CLAUDE.md). Update this file at the start and e
 | 4 | Visitors, approvals, guest passes, real time | `phase-4-visitors-approvals` | ✅ Merged into `main` | [#5](https://github.com/Arjav122/vehicle-access-gate/pull/5) |
 | 5 | Escalation, notifications, scheduled jobs | `phase-5-escalation-jobs` | ✅ Merged into `main` | [#6](https://github.com/Arjav122/vehicle-access-gate/pull/6) |
 | 6 | Frontend | `phase-6-frontend` | ✅ Merged into `main` | [#7](https://github.com/Arjav122/vehicle-access-gate/pull/7) |
-| 7 | Simulator, hardening, end-to-end tests | `phase-7-simulator-hardening` | 🟡 In progress | — |
-| 8 | Docker and deployment | `phase-8-deployment` | ⚪ Not started | — |
-| 9 | Polish, docs, release | `phase-9-release` | ⚪ Not started | — |
+| 7 | Simulator, hardening, end-to-end tests | `phase-7-simulator-hardening` | ✅ Merged into `main` | [#8](https://github.com/Arjav122/vehicle-access-gate/pull/8) |
+| 8 | Docker and deployment | `phase-8-deployment` | ⚪ Not started (after the owner's check, D36) | — |
+| 9 | Polish, docs, release | `phase-9-release` | 🟡 In progress (done before Phase 8, D36) | — |
 
 ## Phase 0 — Safety, cleanup, foundation
 
@@ -189,3 +189,20 @@ Branch `phase-7-simulator-hardening`, from `main`.
 - [x] Verified by hand: admin presses Reset demo → signed out → login says the reset is running → becomes usable again by itself
 - [x] Docs: decisions D32–D35, `docs/learn/phase-7.md`, webcam guide note about resets
 - [ ] Deferred (stretch): Prometheus metrics, load test, static INT8 quantisation
+- [x] [PR #8](https://github.com/Arjav122/vehicle-access-gate/pull/8) opened; first CI run caught a client lint error (fixed); CI green, merged into `main`
+
+## Phase 9 — Polish, docs, release preparation (before deployment)
+
+Branch `phase-9-release`, from `main`. Moved ahead of Phase 8 at the owner's request (D36).
+
+- [x] Measured detector latency: `evaluate.py --latency 200` → 49.1 ms median, 56.1 ms p95 (Ryzen 7 4800H, ONNX Runtime 1.32, synthetic 1280×720 frame) in `anpr/eval/results/`
+- [x] Demo GIF recorded from the running app (`npm run demo:frames` + `e2e/frames_to_gif.py`) → `docs/assets/demo.gif`
+- [x] Bug found while recording, fixed with a regression test: the seed's waiting visitor could be registered in the future (countdown 3:18 > 3:00)
+- [x] Verification found one intermittent failure (demo reset during simulator traffic; not reproduced in 5 re-runs, cause unconfirmed): the reset now retries on Postgres deadlocks, unit-tested (D36)
+- [x] README rewritten (brief §18): demo GIF, pitch, what it does, highlights, architecture, measured results only, stack, quick start, screenshots, structure, decisions, testing, known limitations, future work
+- [x] `docs/learn/INTERVIEW_GUIDE.md`, `docs/learn/phase-9.md`, `docs/deployment.md` (reviewed plan, not deployed)
+- [x] Full verification: server **615 passing** (services/ 96.6 % lines), client **48**, ANPR **68**, 3 Playwright journeys, Docker stack rebuilt + smoke-checked, 23 Markdown files link-checked (17 external links OK)
+- [ ] PR, CI green, merged into `main`
+- [ ] After deployment (Phase 8): live link + badge in README, tag `v2.0.0` with release notes, resume bullets
+- [ ] Owner: labelled photos for accuracy numbers (`anpr/DATASET.md`); optional self-trained detector for `models-v1`
+

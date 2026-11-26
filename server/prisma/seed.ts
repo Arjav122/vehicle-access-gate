@@ -140,12 +140,40 @@ const phone = () => `+91${String(between(7, 9))}${String(between(100_000_000, 99
 
 // ---------- Seeding ----------
 
+/** Postgres "deadlock detected" (SQLSTATE 40P01), however the driver wraps it. */
+export function isDeadlock(err: unknown): boolean {
+  const text = err instanceof Error ? `${err.message} ${JSON.stringify(err)}` : String(err);
+  return /40P01|deadlock detected/i.test(text);
+}
+
+/**
+ * Run `fn`, retrying a few times if Postgres picks it as a deadlock victim. A demo reset
+ * TRUNCATEs every table while the simulator (or a person) may be writing; Postgres then
+ * aborts one side, and the reset should simply try again rather than fail.
+ */
+export async function retryOnDeadlock<T>(
+  fn: () => Promise<T>,
+  attempts = 5,
+  waitMs = 250,
+): Promise<T> {
+  for (let i = 1; ; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (i >= attempts || !isDeadlock(err)) throw err;
+      await new Promise((r) => setTimeout(r, waitMs * i));
+    }
+  }
+}
+
 /** Empty every table except Prisma's migration history. Returns how many tables. */
 export async function emptyDatabase(): Promise<number> {
   const tables = await prisma.$queryRaw<{ tablename: string }[]>`
     SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename <> '_prisma_migrations'`;
   const list = tables.map((t) => `"${t.tablename}"`).join(", ");
-  await prisma.$executeRawUnsafe(`TRUNCATE ${list} RESTART IDENTITY CASCADE`);
+  await retryOnDeadlock(() =>
+    prisma.$executeRawUnsafe(`TRUNCATE ${list} RESTART IDENTITY CASCADE`),
+  );
   return tables.length;
 }
 
@@ -376,6 +404,15 @@ const PURPOSES: Record<Category, string[]> = {
   service: ["Plumber", "Electrician", "AC service", "Internet technician", "Carpenter"],
 };
 
+/**
+ * When the guard registers a visitor: a little after the car arrived, but never after "now".
+ * (A car that arrived 30 s ago with a 40–90 s delay would otherwise be registered in the
+ * future, and its approval would show more than the 3 minutes residents ever get.)
+ */
+export function registrationTime(arrival: Date, delaySeconds: number, now: Date): Date {
+  return new Date(Math.min(arrival.getTime() + delaySeconds * 1000, now.getTime()));
+}
+
 /** Midnight IST of the day `daysAgo` days before `now` (negative = days ahead). */
 function istMidnight(now: Date, daysAgo: number): number {
   return Date.parse(`${istDate(new Date(now.getTime() - daysAgo * 86_400_000))}T00:00:00+05:30`);
@@ -466,7 +503,7 @@ async function seedHistory(lanes: Lane[], now: Date) {
     const read = await camera(lane(gate, "entry"), plate, arrival);
     if (read.visitId || read.matchResult !== "unknown") return;
 
-    const registeredAt = new Date(arrival.getTime() + between(40, 90) * 1000);
+    const registeredAt = registrationTime(arrival, between(40, 90), now);
     const visit = await withTx((tx) =>
       registerVisit(
         tx,
