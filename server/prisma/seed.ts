@@ -1,7 +1,9 @@
 // Seed a made-up society: "Green Valley Residency, Greater Noida".
-//   npm run seed            → fills an empty database
-//   npm run seed -- --reset → wipes all data first
-// Same output every run (fixed random seed). Demo logins use DEMO_PASSWORD:
+//   npm run seed                         → fills an empty database
+//   npm run seed -- --reset              → wipes all data first
+//   npm run seed -- --reset --no-history → people, flats, cars and cameras only (fast; CI)
+// The demo reset (POST /api/demo/reset, nightly at 04:00 IST in demo mode) calls seedSociety().
+// Same people and plates every run (fixed random seed). Demo logins use DEMO_PASSWORD:
 //   admin@example.com, guard@example.com, resident@example.com
 // Camera device keys are printed once; only their hashes are stored.
 // Safety: refuses to touch a database that is not on this machine / in docker compose
@@ -11,6 +13,7 @@
 // plus a small "right now" state, both relative to the moment you run it. History goes through
 // the same services the API uses (camera reads → ingestRead, guard registration, resident
 // answers), so the scheduled jobs find nothing left to repeat.
+import { pathToFileURL } from "node:url";
 import { hashPassword } from "../src/services/auth.js";
 import { prisma, withTx } from "../src/db.js";
 import { config } from "../src/config.js";
@@ -22,13 +25,11 @@ import { hashCode, newCode } from "../src/services/guestPasses.js";
 import { normalizePlate } from "../src/services/plates.js";
 import { registerVisit, transitionVisit } from "../src/services/visits.js";
 
-const args = new Set(process.argv.slice(2));
-const RESET = args.has("--reset");
-const ALLOW_REMOTE = args.has("--allow-remote");
 const LOCAL_HOSTS = new Set(["127.0.0.1", "localhost", "postgres", "::1"]);
 
 // ---------- Deterministic random numbers (mulberry32) ----------
-let state = 20_261_125;
+const SEED = 20_261_125;
+let state = SEED;
 function random(): number {
   state = (state + 0x6d2b79f5) | 0;
   let t = state;
@@ -137,26 +138,39 @@ function personEmail(first: string, last: string, used: Set<string>): string {
 
 const phone = () => `+91${String(between(7, 9))}${String(between(100_000_000, 999_999_999))}`;
 
-// ---------- Main ----------
-async function main() {
-  const host = new URL(config.DATABASE_URL).hostname;
-  if (!LOCAL_HOSTS.has(host) && !ALLOW_REMOTE) {
-    throw new Error(
-      `Refusing to seed ${host}: not a local database. Pass --allow-remote if you really mean it.`,
-    );
-  }
+// ---------- Seeding ----------
+
+/** Empty every table except Prisma's migration history. Returns how many tables. */
+export async function emptyDatabase(): Promise<number> {
+  const tables = await prisma.$queryRaw<{ tablename: string }[]>`
+    SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename <> '_prisma_migrations'`;
+  const list = tables.map((t) => `"${t.tablename}"`).join(", ");
+  await prisma.$executeRawUnsafe(`TRUNCATE ${list} RESTART IDENTITY CASCADE`);
+  return tables.length;
+}
+
+export interface SeedSummary {
+  flats: number;
+  residents: number;
+  vehicles: number;
+  watchlist: number;
+  /** "  Main gate entry camera   vd_…" lines: shown once by the CLI, never stored. */
+  deviceKeys: string[];
+  history: { events: number; visits: number; guestCode: string } | null;
+}
+
+/**
+ * Fill an EMPTY database with the demo society. `history: false` skips the 14 days of
+ * history and the "right now" state (seconds instead of a minute and a half).
+ */
+export async function seedSociety(
+  opts: { history?: boolean; now?: Date } = {},
+): Promise<SeedSummary> {
   if (!config.DEMO_PASSWORD)
     throw new Error("Set DEMO_PASSWORD (see .env.example) before seeding.");
-
-  if (RESET) {
-    const tables = await prisma.$queryRaw<{ tablename: string }[]>`
-      SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename <> '_prisma_migrations'`;
-    const list = tables.map((t) => `"${t.tablename}"`).join(", ");
-    await prisma.$executeRawUnsafe(`TRUNCATE ${list} RESTART IDENTITY CASCADE`);
-    console.log(`Reset: emptied ${String(tables.length)} tables.`);
-  } else if ((await prisma.user.count()) > 0) {
+  if ((await prisma.user.count()) > 0)
     throw new Error("The database already has data. Run `npm run seed -- --reset` to start over.");
-  }
+  state = SEED; // same people and plates every run, also on a demo reset in a long-lived server
 
   // One hash for every demo account: argon2 is slow on purpose, and these share a password.
   const passwordHash = await hashPassword(config.DEMO_PASSWORD);
@@ -298,21 +312,44 @@ async function main() {
     });
   }
 
-  const history = await seedHistory(lanes, new Date());
+  const history = opts.history === false ? null : await seedHistory(lanes, opts.now ?? new Date());
+  return {
+    flats: flats.length,
+    residents,
+    vehicles,
+    watchlist: watch.length,
+    deviceKeys: keys,
+    history,
+  };
+}
+
+async function main() {
+  const args = new Set(process.argv.slice(2));
+  const host = new URL(config.DATABASE_URL).hostname;
+  if (!LOCAL_HOSTS.has(host) && !args.has("--allow-remote")) {
+    throw new Error(
+      `Refusing to seed ${host}: not a local database. Pass --allow-remote if you really mean it.`,
+    );
+  }
+  if (args.has("--reset")) console.log(`Reset: emptied ${String(await emptyDatabase())} tables.`);
+  const s = await seedSociety({ history: !args.has("--no-history") });
+  const history = s.history
+    ? `History: ${String(s.history.events)} camera reads and ${String(s.history.visits)} visits over 14 days, plus "right now".
+
+Guest pass code for A-101 (shown only now): ${s.history.guestCode}`
+    : "No history (--no-history).";
 
   console.log(`
 Seeded "Green Valley Residency, Greater Noida":
-  ${String(flats.length)} flats, ${String(residents)} residents, ${String(vehicles)} vehicles, 3 guards, 1 admin,
-  2 gates with 4 camera devices, ${String(watch.length)} watchlist plates.
-  History: ${String(history.events)} camera reads and ${String(history.visits)} visits over 14 days, plus "right now".
-
-Guest pass code for A-101 (shown only now): ${history.guestCode}
+  ${String(s.flats)} flats, ${String(s.residents)} residents, ${String(s.vehicles)} vehicles, 3 guards, 1 admin,
+  2 gates with 4 camera devices, ${String(s.watchlist)} watchlist plates.
+  ${history}
 
 Demo logins (password = DEMO_PASSWORD):
   admin@example.com · guard@example.com · resident@example.com (A-101)
 
 Camera device keys (shown only now; store them on the cameras):
-${keys.join("\n")}
+${s.deviceKeys.join("\n")}
 `);
 }
 
@@ -574,9 +611,13 @@ async function seedHistory(lanes: Lane[], now: Date) {
   return { events, visits, guestCode };
 }
 
-main()
-  .catch((err: unknown) => {
-    console.error(err instanceof Error ? err.message : err);
-    process.exitCode = 1;
-  })
-  .finally(() => void prisma.$disconnect());
+// Run only as a script (`tsx prisma/seed.ts`), not when the demo reset imports this file.
+const entry = process.argv[1];
+if (entry !== undefined && import.meta.url === pathToFileURL(entry).href) {
+  main()
+    .catch((err: unknown) => {
+      console.error(err instanceof Error ? err.message : err);
+      process.exitCode = 1;
+    })
+    .finally(() => void prisma.$disconnect());
+}

@@ -86,6 +86,15 @@ export default function LoginPage() {
             </p>
           </div>
 
+          {demo.data?.resetting ? (
+            <p
+              role="status"
+              className="rounded-md border border-border bg-info-soft p-3 text-sm text-info"
+            >
+              The demo is being reset with fresh data. Signing in works again in a minute or so;
+              this page will notice by itself.
+            </p>
+          ) : null}
           {demo.data ? (
             <div className="grid gap-2">
               <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
@@ -98,7 +107,7 @@ export default function LoginPage() {
                     key={a.role}
                     size="lg"
                     className="justify-start"
-                    disabled={signIn.isPending}
+                    disabled={signIn.isPending || demo.data?.resetting === true}
                     onClick={() => {
                       submit({ email: a.email, password: demo.data?.password ?? "" });
                     }}

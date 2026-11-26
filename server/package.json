@@ -21,7 +21,8 @@
     "seed": "tsx prisma/seed.ts",
     "openapi": "tsx src/index.ts --write-openapi ../client/openapi.json",
     "postinstall": "prisma generate",
-    "webcam:devices": "tsx --env-file-if-exists=../.env prisma/webcamDevices.ts"
+    "webcam:devices": "tsx --env-file-if-exists=../.env prisma/webcamDevices.ts",
+    "simulator": "tsx src/simulator.ts"
   },
   "prettier": {
     "printWidth": 100

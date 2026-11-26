@@ -1,8 +1,9 @@
 // Phase 6: analytics (IST hours and days, averages, overstay rate, frequent visitors, inside now)
 // and demo mode (404 unless DEMO_MODE=true).
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { config } from "../src/config.js";
 import { prisma } from "../src/db.js";
+import { demoResetRunning, runDemoReset } from "../src/routes/demo.js";
 import { newDeviceKey } from "../src/routes/devices.js";
 import { inside, istDate, overview } from "../src/services/analytics.js";
 import { ingestRead } from "../src/services/gateEvents.js";
@@ -185,4 +186,63 @@ describe("demo mode", () => {
       "admin",
     ]);
   });
+});
+
+describe("demo reset", () => {
+  const saved = { mode: config.DEMO_MODE, password: config.DEMO_PASSWORD };
+  afterEach(() => {
+    config.DEMO_MODE = saved.mode;
+    config.DEMO_PASSWORD = saved.password;
+  });
+
+  it("is 404 when demo mode is off, and admin-only when on", async () => {
+    const api = makeApi();
+    const admin = api.as(await tokenFor((await createUser("admin")).id));
+    const guard = api.as(await tokenFor((await createUser("guard")).id));
+    config.DEMO_MODE = false;
+    expect((await admin.post("/api/demo/reset", { history: false })).status).toBe(404);
+    config.DEMO_MODE = true;
+    config.DEMO_PASSWORD = "demo-pass";
+    expect((await guard.post("/api/demo/reset", { history: false })).status).toBe(403);
+  });
+
+  it("starts in the background (202), runs one at a time, then the demo logins work", async () => {
+    config.DEMO_MODE = true;
+    config.DEMO_PASSWORD = "demo-pass";
+    const api = makeApi();
+    const admin = api.as(await tokenFor((await createUser("admin")).id));
+    const res = await admin.post("/api/demo/reset", { history: false });
+    expect(res.status).toBe(202);
+    expect(demoResetRunning()).toBe(true);
+    // One at a time. (Asked directly: over HTTP the second request can be refused with 401
+    // instead, because the running reset has already deleted the admin's account.)
+    expect(await runDemoReset({ history: false })).toBe(false);
+    expect((await api.as().get("/api/demo")).body.resetting).toBe(true);
+
+    await vi.waitFor(
+      () => {
+        expect(demoResetRunning()).toBe(false);
+      },
+      { timeout: 30_000, interval: 200 },
+    );
+    expect(await prisma.flat.count()).toBe(40);
+    expect(await prisma.device.count()).toBe(4);
+    const login = await api
+      .as()
+      .post("/api/auth/login", { email: "guard@example.com", password: "demo-pass" });
+    expect(login.status).toBe(200);
+  }, 40_000);
+
+  it("gives the same people and plates every time", async () => {
+    config.DEMO_PASSWORD = "demo-pass";
+    expect(await runDemoReset({ history: false })).toBe(true);
+    const first = (await prisma.vehicle.findMany({ orderBy: { plateNormalized: "asc" } })).map(
+      (v) => v.plateNormalized,
+    );
+    expect(await runDemoReset({ history: false })).toBe(true);
+    const second = (await prisma.vehicle.findMany({ orderBy: { plateNormalized: "asc" } })).map(
+      (v) => v.plateNormalized,
+    );
+    expect(second).toEqual(first);
+  }, 40_000);
 });

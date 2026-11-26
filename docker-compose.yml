@@ -46,6 +46,11 @@ services:
       DEMO_PASSWORD: ${DEMO_PASSWORD:-demo-password-change-me}
       # Dev shows the one-click demo logins on the login page; production keeps it off.
       DEMO_MODE: ${DEMO_MODE:-true}
+      # Overridable so the end-to-end overstay journey can run in minutes, not hours (CI sets
+      # them small); the defaults are the brief's.
+      VISIT_LIMIT_CAB_MINUTES: ${VISIT_LIMIT_CAB_MINUTES:-10}
+      OVERSTAY_REMINDER_MINUTES: ${OVERSTAY_REMINDER_MINUTES:-30}
+      OVERSTAY_ESCALATION_MINUTES: ${OVERSTAY_ESCALATION_MINUTES:-60}
       # File-change events do not cross a Windows -> Docker bind mount; let tsx watch poll.
       CHOKIDAR_USEPOLLING: "true"
     ports:
@@ -53,6 +58,8 @@ services:
     volumes:
       # Live-edit the source; node_modules stays the one built inside the image.
       - ./server/src:/app/src:ro
+      # The seed too (the demo reset runs it), so a seed change needs no image rebuild.
+      - ./server/prisma:/app/prisma:ro
       # Camera snapshots survive container rebuilds.
       - snapshots:/app/data
     depends_on:
@@ -60,6 +67,23 @@ services:
         condition: service_healthy
       mailpit:
         condition: service_started
+
+  # Demo traffic through the public API. Opt in:  docker compose --profile simulator up -d
+  # (seed first). Uses the same image as the server; never touches the database.
+  simulator:
+    profiles: ["simulator"]
+    build: ./server
+    command: ["npm", "run", "simulator", "--", "--api", "http://server:4000"]
+    healthcheck:
+      disable: true # the image's check probes the API port, which this process doesn't serve
+    environment:
+      SIM_PASSWORD: ${DEMO_PASSWORD:-demo-password-change-me}
+    volumes:
+      - ./server/src:/app/src:ro
+    depends_on:
+      server:
+        condition: service_healthy
+    restart: unless-stopped
 
   client:
     build: ./client

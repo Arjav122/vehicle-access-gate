@@ -1,10 +1,16 @@
 // Admin: society settings (time limits per visit category, approval timeout, OCR confidence
 // threshold, how long visitor data is kept). Saves only what changed; every change is audited.
+// In demo mode there is also "Reset demo": wipe and re-seed (everybody is signed out).
 import { useQuery } from "@tanstack/react-query";
+import { RotateCcw } from "lucide-react";
+import { useNavigate } from "react-router";
+import { toast } from "sonner";
 import { type SubmitEvent, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, ErrorState, ListSkeleton } from "@/components/ui/card";
+import { ConfirmDialog } from "@/components/ui/dialog";
 import { Field, Input } from "@/components/ui/form";
+import { useDemo, useSignOut } from "@/features/auth/session";
 import { useAction } from "@/features/shared/hooks";
 import { api, errorMessage, unwrap, type Schemas } from "@/lib/api";
 
@@ -85,6 +91,53 @@ function SettingsForm({ settings }: { settings: Settings }) {
   );
 }
 
+function DemoReset() {
+  const demo = useDemo();
+  const signOut = useSignOut();
+  const navigate = useNavigate();
+  const [confirm, setConfirm] = useState(false);
+  const reset = useAction(() => unwrap(api.POST("/api/demo/reset", { body: { history: true } })));
+  if (!demo.data) return null; // demo mode is off: no reset in a real society
+  return (
+    <Card>
+      <CardHeader
+        title="Demo data"
+        description="Wipe everything and load the demo society again: 14 days of history plus a live 'right now' state. Takes about a minute and a half and signs everybody out."
+        action={
+          <Button
+            variant="danger"
+            size="sm"
+            disabled={reset.isPending || demo.data.resetting}
+            onClick={() => {
+              setConfirm(true);
+            }}
+          >
+            <RotateCcw aria-hidden /> Reset demo
+          </Button>
+        }
+      />
+      <ConfirmDialog
+        open={confirm}
+        onOpenChange={setConfirm}
+        title="Reset the demo?"
+        description="All visits, gate events and changes are deleted and the demo society is loaded again. Everybody is signed out. This can't be undone."
+        confirmLabel="Reset demo"
+        pending={reset.isPending}
+        onConfirm={() => {
+          reset.mutate(undefined, {
+            onSuccess: () => {
+              setConfirm(false);
+              toast.success("Demo reset started. Sign in again in about a minute and a half.");
+              signOut();
+              void navigate("/login");
+            },
+          });
+        }}
+      />
+    </Card>
+  );
+}
+
 export default function SettingsPage() {
   const q = useQuery({
     queryKey: ["settings"],
@@ -103,6 +156,7 @@ export default function SettingsPage() {
           <SettingsForm key={JSON.stringify(q.data)} settings={q.data} />
         )}
       </Card>
+      <DemoReset />
     </div>
   );
 }

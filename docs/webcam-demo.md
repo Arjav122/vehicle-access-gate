@@ -20,6 +20,10 @@ Hold a number plate (printed, or on a phone screen) in front of your laptop came
    cd server; $env:DATABASE_URL="postgresql://vehicle_access:vehicle_access@127.0.0.1:5432/vehicle_access"; npm run webcam:devices
    ```
 
+   A demo reset (admin → Settings → Reset demo, or the nightly 04:00 reset in demo mode) deletes
+   every device, so run this step again after one. The traffic simulator never touches devices
+   whose name contains "Laptop webcam", so both can run side by side.
+
 3. Install the worker with the OCR engine (Python 3.12; `uv` downloads it if needed), then download the detector:
 
    ```powershell

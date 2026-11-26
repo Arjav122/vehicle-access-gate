@@ -4,3 +4,4 @@ openapi.json
 src/lib/schema.d.ts
 test-results
 playwright-report
+coverage

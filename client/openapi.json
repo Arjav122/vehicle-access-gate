@@ -21,6 +21,190 @@
       }
     },
     "schemas": {
+      "Error": {
+        "type": "object",
+        "properties": {
+          "detail": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "detail"
+        ]
+      },
+      "Device": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "gateId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "gateName": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "entry",
+              "exit"
+            ]
+          },
+          "apiKeyPrefix": {
+            "type": "string",
+            "description": "First characters of the key, to recognise it"
+          },
+          "lastSeenAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "gateId",
+          "gateName",
+          "name",
+          "direction",
+          "apiKeyPrefix",
+          "lastSeenAt",
+          "isActive",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "DeviceWithKey": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "gateId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "gateName": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "entry",
+              "exit"
+            ]
+          },
+          "apiKeyPrefix": {
+            "type": "string",
+            "description": "First characters of the key, to recognise it"
+          },
+          "lastSeenAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "apiKey": {
+            "type": "string",
+            "description": "Shown only now. Store it on the camera; it cannot be shown again."
+          }
+        },
+        "required": [
+          "id",
+          "gateId",
+          "gateName",
+          "name",
+          "direction",
+          "apiKeyPrefix",
+          "lastSeenAt",
+          "isActive",
+          "createdAt",
+          "updatedAt",
+          "apiKey"
+        ]
+      },
+      "DemoInfo": {
+        "type": "object",
+        "properties": {
+          "society": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          },
+          "accounts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "role": {
+                  "type": "string",
+                  "enum": [
+                    "admin",
+                    "guard",
+                    "resident"
+                  ]
+                },
+                "email": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "role",
+                "email",
+                "label"
+              ]
+            }
+          },
+          "resetting": {
+            "type": "boolean",
+            "description": "A demo reset is running; sign in again when it is false"
+          }
+        },
+        "required": [
+          "society",
+          "password",
+          "accounts",
+          "resetting"
+        ]
+      },
       "Flat": {
         "type": "object",
         "properties": {
@@ -58,17 +242,6 @@
           "label",
           "createdAt",
           "updatedAt"
-        ]
-      },
-      "Error": {
-        "type": "object",
-        "properties": {
-          "detail": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "detail"
         ]
       },
       "EscalationTask": {
@@ -902,174 +1075,6 @@
           "flats"
         ]
       },
-      "DemoInfo": {
-        "type": "object",
-        "properties": {
-          "society": {
-            "type": "string"
-          },
-          "password": {
-            "type": "string"
-          },
-          "accounts": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "role": {
-                  "type": "string",
-                  "enum": [
-                    "admin",
-                    "guard",
-                    "resident"
-                  ]
-                },
-                "email": {
-                  "type": "string"
-                },
-                "label": {
-                  "type": "string"
-                }
-              },
-              "required": [
-                "role",
-                "email",
-                "label"
-              ]
-            }
-          }
-        },
-        "required": [
-          "society",
-          "password",
-          "accounts"
-        ]
-      },
-      "Device": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "gateId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "gateName": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          },
-          "direction": {
-            "type": "string",
-            "enum": [
-              "entry",
-              "exit"
-            ]
-          },
-          "apiKeyPrefix": {
-            "type": "string",
-            "description": "First characters of the key, to recognise it"
-          },
-          "lastSeenAt": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "format": "date-time"
-          },
-          "isActive": {
-            "type": "boolean"
-          },
-          "createdAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "updatedAt": {
-            "type": "string",
-            "format": "date-time"
-          }
-        },
-        "required": [
-          "id",
-          "gateId",
-          "gateName",
-          "name",
-          "direction",
-          "apiKeyPrefix",
-          "lastSeenAt",
-          "isActive",
-          "createdAt",
-          "updatedAt"
-        ]
-      },
-      "DeviceWithKey": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "gateId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "gateName": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          },
-          "direction": {
-            "type": "string",
-            "enum": [
-              "entry",
-              "exit"
-            ]
-          },
-          "apiKeyPrefix": {
-            "type": "string",
-            "description": "First characters of the key, to recognise it"
-          },
-          "lastSeenAt": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "format": "date-time"
-          },
-          "isActive": {
-            "type": "boolean"
-          },
-          "createdAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "updatedAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "apiKey": {
-            "type": "string",
-            "description": "Shown only now. Store it on the camera; it cannot be shown again."
-          }
-        },
-        "required": [
-          "id",
-          "gateId",
-          "gateName",
-          "name",
-          "direction",
-          "apiKeyPrefix",
-          "lastSeenAt",
-          "isActive",
-          "createdAt",
-          "updatedAt",
-          "apiKey"
-        ]
-      },
       "GateEvent": {
         "type": "object",
         "properties": {
@@ -1653,6 +1658,704 @@
     "parameters": {}
   },
   "paths": {
+    "/api/devices/me": {
+      "get": {
+        "tags": [
+          "Devices"
+        ],
+        "summary": "Camera checks its own key",
+        "description": "Camera device only.",
+        "security": [
+          {
+            "deviceKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "This device",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "direction": {
+                      "type": "string",
+                      "enum": [
+                        "entry",
+                        "exit"
+                      ]
+                    },
+                    "gateId": {
+                      "type": "string",
+                      "format": "uuid"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "direction",
+                    "gateId"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or invalid credentials",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/devices": {
+      "get": {
+        "tags": [
+          "Devices"
+        ],
+        "summary": "List camera devices",
+        "description": "Roles: admin.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "default": 0
+            },
+            "required": false,
+            "name": "offset",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": false,
+            "name": "gateId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            },
+            "required": false,
+            "name": "isActive",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Devices",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Device"
+                      }
+                    },
+                    "total": {
+                      "type": "integer"
+                    },
+                    "limit": {
+                      "type": "integer"
+                    },
+                    "offset": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "total",
+                    "limit",
+                    "offset"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or invalid credentials",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but this role may not do this",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Devices"
+        ],
+        "summary": "Add a camera device (returns its key once)",
+        "description": "Roles: admin.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "gateId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 60
+                  },
+                  "direction": {
+                    "type": "string",
+                    "enum": [
+                      "entry",
+                      "exit"
+                    ]
+                  }
+                },
+                "required": [
+                  "gateId",
+                  "name",
+                  "direction"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceWithKey"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or invalid credentials",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but this role may not do this",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Gate not found"
+          },
+          "409": {
+            "description": "Name taken at this gate"
+          },
+          "422": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/devices/{id}": {
+      "get": {
+        "tags": [
+          "Devices"
+        ],
+        "summary": "Get a camera device",
+        "description": "Roles: admin.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Device",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Device"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or invalid credentials",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but this role may not do this",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "422": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Devices"
+        ],
+        "summary": "Change a camera device",
+        "description": "Roles: admin.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 60
+                  },
+                  "direction": {
+                    "type": "string",
+                    "enum": [
+                      "entry",
+                      "exit"
+                    ]
+                  },
+                  "isActive": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Device"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or invalid credentials",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but this role may not do this",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "409": {
+            "description": "Name taken at this gate"
+          },
+          "422": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Devices"
+        ],
+        "summary": "Delete a camera device (only if it never sent events; otherwise deactivate it)",
+        "description": "Roles: admin.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "401": {
+            "description": "Not signed in, or invalid credentials",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but this role may not do this",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "409": {
+            "description": "Has gate events"
+          },
+          "422": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/devices/{id}/rotate-key": {
+      "post": {
+        "tags": [
+          "Devices"
+        ],
+        "summary": "Replace a device's key (the old key stops working; the new one is returned once)",
+        "description": "Roles: admin.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "New key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceWithKey"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or invalid credentials",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but this role may not do this",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "422": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/demo": {
+      "get": {
+        "tags": [
+          "Demo"
+        ],
+        "summary": "Demo logins (only when DEMO_MODE=true, else 404)",
+        "description": "Public.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Demo accounts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DemoInfo"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Off"
+          }
+        }
+      }
+    },
+    "/api/demo/reset": {
+      "post": {
+        "tags": [
+          "Demo"
+        ],
+        "summary": "Reset the demo data (admin, demo mode only). Runs in the background.",
+        "description": "Roles: admin. Answers 202 at once; the reset takes about a minute and a half and signs everybody out.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "history": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "false: people, flats, cars and cameras only (seconds instead of ~90 s)"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Reset started",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "started"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or invalid credentials",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but this role may not do this",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Demo mode is off"
+          },
+          "409": {
+            "description": "A reset is already running"
+          },
+          "422": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/flats": {
       "get": {
         "tags": [
@@ -4300,614 +5003,6 @@
           },
           "403": {
             "description": "Signed in, but this role may not do this",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/demo": {
-      "get": {
-        "tags": [
-          "Demo"
-        ],
-        "summary": "Demo logins (only when DEMO_MODE=true, else 404)",
-        "description": "Public.",
-        "security": [],
-        "responses": {
-          "200": {
-            "description": "Demo accounts",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DemoInfo"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Off"
-          }
-        }
-      }
-    },
-    "/api/devices/me": {
-      "get": {
-        "tags": [
-          "Devices"
-        ],
-        "summary": "Camera checks its own key",
-        "description": "Camera device only.",
-        "security": [
-          {
-            "deviceKey": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "This device",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "id": {
-                      "type": "string",
-                      "format": "uuid"
-                    },
-                    "name": {
-                      "type": "string"
-                    },
-                    "direction": {
-                      "type": "string",
-                      "enum": [
-                        "entry",
-                        "exit"
-                      ]
-                    },
-                    "gateId": {
-                      "type": "string",
-                      "format": "uuid"
-                    }
-                  },
-                  "required": [
-                    "id",
-                    "name",
-                    "direction",
-                    "gateId"
-                  ]
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Not signed in, or invalid credentials",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/devices": {
-      "get": {
-        "tags": [
-          "Devices"
-        ],
-        "summary": "List camera devices",
-        "description": "Roles: admin.",
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 100,
-              "default": 20
-            },
-            "required": false,
-            "name": "limit",
-            "in": "query"
-          },
-          {
-            "schema": {
-              "type": [
-                "integer",
-                "null"
-              ],
-              "minimum": 0,
-              "default": 0
-            },
-            "required": false,
-            "name": "offset",
-            "in": "query"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": false,
-            "name": "gateId",
-            "in": "query"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "enum": [
-                "true",
-                "false"
-              ]
-            },
-            "required": false,
-            "name": "isActive",
-            "in": "query"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Devices",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "items": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/Device"
-                      }
-                    },
-                    "total": {
-                      "type": "integer"
-                    },
-                    "limit": {
-                      "type": "integer"
-                    },
-                    "offset": {
-                      "type": "integer"
-                    }
-                  },
-                  "required": [
-                    "items",
-                    "total",
-                    "limit",
-                    "offset"
-                  ]
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Not signed in, or invalid credentials",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Signed in, but this role may not do this",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Invalid input",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "Devices"
-        ],
-        "summary": "Add a camera device (returns its key once)",
-        "description": "Roles: admin.",
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "gateId": {
-                    "type": "string",
-                    "format": "uuid"
-                  },
-                  "name": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 60
-                  },
-                  "direction": {
-                    "type": "string",
-                    "enum": [
-                      "entry",
-                      "exit"
-                    ]
-                  }
-                },
-                "required": [
-                  "gateId",
-                  "name",
-                  "direction"
-                ],
-                "additionalProperties": false
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Created",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DeviceWithKey"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Not signed in, or invalid credentials",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Signed in, but this role may not do this",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Gate not found"
-          },
-          "409": {
-            "description": "Name taken at this gate"
-          },
-          "422": {
-            "description": "Invalid input",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/devices/{id}": {
-      "get": {
-        "tags": [
-          "Devices"
-        ],
-        "summary": "Get a camera device",
-        "description": "Roles: admin.",
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true,
-            "name": "id",
-            "in": "path"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Device",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Device"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Not signed in, or invalid credentials",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Signed in, but this role may not do this",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not found"
-          },
-          "422": {
-            "description": "Invalid input",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
-      },
-      "patch": {
-        "tags": [
-          "Devices"
-        ],
-        "summary": "Change a camera device",
-        "description": "Roles: admin.",
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true,
-            "name": "id",
-            "in": "path"
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "name": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 60
-                  },
-                  "direction": {
-                    "type": "string",
-                    "enum": [
-                      "entry",
-                      "exit"
-                    ]
-                  },
-                  "isActive": {
-                    "type": "boolean"
-                  }
-                },
-                "additionalProperties": false
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Updated",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Device"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Not signed in, or invalid credentials",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Signed in, but this role may not do this",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not found"
-          },
-          "409": {
-            "description": "Name taken at this gate"
-          },
-          "422": {
-            "description": "Invalid input",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "tags": [
-          "Devices"
-        ],
-        "summary": "Delete a camera device (only if it never sent events; otherwise deactivate it)",
-        "description": "Roles: admin.",
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true,
-            "name": "id",
-            "in": "path"
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Deleted"
-          },
-          "401": {
-            "description": "Not signed in, or invalid credentials",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Signed in, but this role may not do this",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not found"
-          },
-          "409": {
-            "description": "Has gate events"
-          },
-          "422": {
-            "description": "Invalid input",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/devices/{id}/rotate-key": {
-      "post": {
-        "tags": [
-          "Devices"
-        ],
-        "summary": "Replace a device's key (the old key stops working; the new one is returned once)",
-        "description": "Roles: admin.",
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true,
-            "name": "id",
-            "in": "path"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "New key",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DeviceWithKey"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Not signed in, or invalid credentials",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Signed in, but this role may not do this",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not found"
-          },
-          "422": {
-            "description": "Invalid input",
             "content": {
               "application/json": {
                 "schema": {

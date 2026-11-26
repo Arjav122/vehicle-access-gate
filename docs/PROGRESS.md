@@ -10,8 +10,8 @@ The brief is in [`CLAUDE.md`](../CLAUDE.md). Update this file at the start and e
 | 3 | ANPR worker | `phase-3-anpr-worker` | ✅ Merged into `main` | [#4](https://github.com/Arjav122/vehicle-access-gate/pull/4) |
 | 4 | Visitors, approvals, guest passes, real time | `phase-4-visitors-approvals` | ✅ Merged into `main` | [#5](https://github.com/Arjav122/vehicle-access-gate/pull/5) |
 | 5 | Escalation, notifications, scheduled jobs | `phase-5-escalation-jobs` | ✅ Merged into `main` | [#6](https://github.com/Arjav122/vehicle-access-gate/pull/6) |
-| 6 | Frontend | `phase-6-frontend` | 🟡 In progress | — |
-| 7 | Simulator, hardening, end-to-end tests | `phase-7-simulator-hardening` | ⚪ Not started | — |
+| 6 | Frontend | `phase-6-frontend` | ✅ Merged into `main` | [#7](https://github.com/Arjav122/vehicle-access-gate/pull/7) |
+| 7 | Simulator, hardening, end-to-end tests | `phase-7-simulator-hardening` | 🟡 In progress | — |
 | 8 | Docker and deployment | `phase-8-deployment` | ⚪ Not started | — |
 | 9 | Polish, docs, release | `phase-9-release` | ⚪ Not started | — |
 
@@ -173,3 +173,19 @@ Client:
 - [x] Screenshots of every main screen in `docs/assets/` (`npm run screenshots`, Playwright against the running stack)
 - [x] `docs/architecture.md` (system, frontend, design system), decisions D26–D31, `docs/learn/phase-6.md`
 - [ ] Deferred: demo reset button + `POST /demo/reset` → Phase 7; Hindi toggle and Telegram link (stretch)
+- [x] [PR #7](https://github.com/Arjav122/vehicle-access-gate/pull/7) opened, CI green, merged into `main`
+
+## Phase 7 — Simulator, hardening, end-to-end tests
+
+Branch `phase-7-simulator-hardening`, from `main`.
+
+- [x] Seed as a reusable function (`seedSociety`, `--no-history`); `POST /demo/reset` (admin, demo mode only, 202 + background, one at a time); admin "Reset demo" button; login page notices a running reset; `demo.nightlyReset` at 04:00 IST (D32)
+- [x] Simulator (`server/src/simulator.ts`): separate process, public API only; IST rush hours (Poisson arrivals) or `--rate`; resident cars, unknown visitors (approve / deny / ignored → guard decides), guest passes, blurry reads, watchlist (max once per 45 min), real-time overstays; simulated guard rounds; leaves `--leave-devices` alone; starts over after a demo reset; `--api --speed --seed --minutes --rate` (D33)
+- [x] Simulator in docker compose (profile `simulator`); seed folder mounted so the reset uses the current seed
+- [x] Hardening review against §10.7 / §10.9 (D35): new tests for the per-address sign-in limit and the per-camera read limit; `trust proxy` + served-app CSP → Phase 8
+- [x] Playwright journeys against the real stack: (1) resident vehicle entry, (2) unknown visitor approval, (3) overstay escalation incl. the email in Mailpit; all three pass locally (journey 3 ≈ 3.5 min with short limits) (D34)
+- [x] CI: the compose job runs the journeys with short time limits; client coverage thresholds on `src/lib` + `components/ui` (75 / 75 / 75 / 60, measured 77 / 65 / 77 / 78)
+- [x] Tests: server **612 passing** (services/ coverage 96.6% lines, 86.4% branches); client **48 passing**; 3 Playwright journeys passing
+- [x] Verified by hand: admin presses Reset demo → signed out → login says the reset is running → becomes usable again by itself
+- [x] Docs: decisions D32–D35, `docs/learn/phase-7.md`, webcam guide note about resets
+- [ ] Deferred (stretch): Prometheus metrics, load test, static INT8 quantisation

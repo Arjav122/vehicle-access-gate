@@ -295,11 +295,70 @@ One section per decision: context, decision, alternatives, consequences. Newest 
 - **openapi-typescript 7.13 declares a peer of TypeScript 5**, while the repo uses TypeScript 6. It is a build-time generator only, so `client/package.json` overrides its peer to our TypeScript. The generated `schema.d.ts` type-checks under TS 6, and CI regenerates it to prove it still matches. Revisit when a TS 6-compatible release ships.
 - **Playwright arrived one phase early**, for reproducible screenshots (`npm run screenshots` signs in for real and captures every main screen into `docs/assets/`). Phase 7 adds the three end-to-end journeys to the same setup.
 
+## D32. Demo reset: the seed as a function, run in the background
+
+- **Context:** brief §13. A public demo gets messy (deleted vehicles, half-finished visits), so it needs a one-click and a nightly way back to a known state.
+- **Decision:**
+  - `prisma/seed.ts` exports `emptyDatabase()` and `seedSociety({ history })`. The CLI, the demo reset and the tests all use them. The random generator is re-seeded on every call, so a reset in a long-running server gives the same people and plates.
+  - `POST /demo/reset` (admin, `DEMO_MODE=true` only, otherwise 404) answers **202** at once and runs the reset in the background, because a full reset takes about 90 s. A second request while it runs gets **409**. `GET /demo` reports `resetting`.
+  - The client signs the admin out and shows a notice on the login page, which polls every 5 s until signing in works again.
+  - `demo.nightlyReset` runs at 04:00 IST in demo mode. While any reset runs, the other jobs skip their turn.
+  - `{ "history": false }` gives a quick reset (seconds) without the 14 days.
+- **Alternatives:** a reset inside the request (the browser would wait 90 s, and a proxy could time it out); restoring a database dump (fast, but the "right now" state would go stale, while the seed computes it relative to now).
+- **Consequences:** a reset signs everybody out (accounts are re-created) and deletes every device, including a laptop webcam's: run `npm run webcam:devices` again afterwards. The simulator notices the 401s and starts over by itself.
+
+## D33. Traffic simulator: a separate process that only uses the public API
+
+- **Context:** brief §13. The deployed demo must look alive at any hour, and must exercise the same code paths real users do.
+- **Decision:**
+  - `src/simulator.ts` runs as its own process from the server image (`npm run simulator`, compose profile `simulator`). It imports nothing that touches the database.
+  - It signs in as the demo admin (to rotate the keys of the cameras it uses), the guard and residents (tokens cached and refreshed, so it stays under the login rate limits). It posts camera reads with device keys.
+  - **Traffic:** arrivals are a Poisson process. The rate follows the IST time of day (2/min in the 8–10 am and 6–9 pm rush, 0.6/min in the day, almost none at night), or a fixed `--rate`.
+  - **Shares (§13):** 50% resident cars in or out, 30% unknown visitors (80% approved, 10% denied, 10% ignored so the guard decides after the timeout), 7% guest passes, 10% blurry reads, 3% watchlist (at most once per 45 min).
+  - About 1 in 8 visitors overstays by **real** minutes even at `--speed > 1`, so the real escalation ladder runs. Normal stays and reaction times are divided by `--speed`.
+  - A simulated guard does rounds every minute: it corrects the blurry reads it caused (it knows the true plate), dismisses others, acknowledges old alerts, resolves call tasks, decides timed-out visitors, and checks out long-forgotten ones.
+  - It never touches cameras named in `--leave-devices` (default "Laptop webcam"). On a 401 (keys or accounts gone after a demo reset) it bootstraps again.
+  - Flags: `--api --speed --seed --minutes --rate --leave-devices`.
+- **Alternatives:** writing rows straight into the database (fast, but it would bypass validation, pairing, real time and the jobs, so the demo would show a fake); generating traffic inside the API process (the demo would then rely on code that a real society would never run).
+- **Consequences:** the simulator is also a black-box test of the API: a test runs it against a real server for a minute, resets the demo underneath it and checks that it carries on. Behind a reverse proxy the login limit is per IP, so the proxy must forward client IPs (Phase 8, `trust proxy`).
+
+## D34. End-to-end tests: three journeys against the real stack, in the compose CI job
+
+- **Context:** brief §14. Unit and API tests can't prove that a camera read reaches the guard's screen live, or that a resident's tap on a phone moves the car inside.
+- **Decision:**
+  - Playwright runs against `docker compose` (browser → Vite → API → Postgres, Socket.io, Mailpit). Each run creates its own two cameras through the admin API and signs in through the login page.
+  - **(1) Resident car:** a read with an OCR look-alike is repaired, and the guard sees "entry logged" live, then "exit logged".
+  - **(2) Unknown visitor:** the guard registers the car from the arrival, the Register button disappears, the resident approves on a phone-sized second browser, and the guard sees the car inside; the exit camera closes the visit.
+  - **(3) Overstay:** limit → Overstayed → call task with the resident's number → Reached, plus the overstay email is checked in Mailpit's API.
+  - Journey 3 needs short time limits, so `VISIT_LIMIT_CAB_MINUTES`, `OVERSTAY_REMINDER_MINUTES` and `OVERSTAY_ESCALATION_MINUTES` can be overridden in compose. CI sets 1 / 1 / 2. Locally the journey skips itself with instructions if the limits are normal.
+  - The journeys run in the existing compose job (one image build), after the smoke test; the Playwright report is uploaded on failure.
+- **Alternatives:** a fake clock in the server for e2e (a test-only code path in production code); mocking the API in the browser (would test nothing that matters here).
+- **Consequences:** about 4 minutes of CI, almost all of it journey 3 waiting for real minutes to pass. Client unit coverage thresholds (75% lines, statements and functions, 60% branches) cover `src/lib` and `src/components/ui`; the screens are covered by these journeys.
+
+## D35. Hardening review (Phase 7)
+
+- **Context:** brief §10.7, §10.9. Most protections were built with the features they protect; Phase 7 checks them against the brief.
+- **Already in place and tested:**
+  - request ids (kept if safe, else a new UUID, echoed and logged);
+  - helmet headers, with `X-Powered-By` removed;
+  - CORS allow-list;
+  - 1 MiB JSON limit (413), and camera uploads at snapshot max + 64 KB (413 for oversize, 422 for non-images);
+  - login limits per account (10/min) and per IP (20/min), camera limit per key (600/min), all with 429 + `Retry-After`;
+  - argon2id with a dummy hash for unknown emails;
+  - pinned-algorithm JWTs, rotating single-use refresh tokens with reuse detection, every route × every role.
+- **Added now:** tests for the per-IP login limit and the per-camera limit. The camera limit counts by key hash even for unknown keys, so guessing keys is throttled too.
+- **Deferred:**
+  - `trust proxy` + CSP for the served app with Caddy (Phase 8). Without `trust proxy`, every user behind the proxy would share one IP for rate limiting.
+  - The httpOnly refresh-cookie idea (D28) stays a documented alternative: moving the refresh token to a cookie needs CSRF protection and adds little while the access token must still live in JavaScript.
+  - Prometheus metrics and a load test (stretch) are not built.
+
 ## Deferred
 
 - **Telegram approvals** (stretch): not built in Phase 4. The approval service already takes a `channel`, so the webhook only needs to call `residentDecides(…, "telegram")`.
 - **Visitor email** ("gets an email with visit details"): done in Phase 5. An approved visitor with an email gets a "visit approved" message (D23).
-- **`demo.nightlyReset` job:** Phase 7, together with demo mode and the simulator.
-- **Demo reset** (`POST /demo/reset`, the admin "Reset demo" button, `demo.nightlyReset`): Phase 7, with the simulator. Phase 6 ships `GET /demo` (one-click logins).
+- **`demo.nightlyReset` job:** done in Phase 7 (D32).
+- **Demo reset** (`POST /demo/reset`, the admin "Reset demo" button, `demo.nightlyReset`): done in Phase 7 (D32).
 - **Hindi toggle and Telegram link in the resident profile** (stretch): not built; the profile says Telegram is planned.
-- **httpOnly refresh cookie** instead of localStorage: considered in D28, revisit in Phase 7 hardening.
+- **httpOnly refresh cookie** instead of localStorage: reviewed in Phase 7 (D35), kept as a documented alternative.
+- **Prometheus `/metrics` and a load test of gate-event ingestion** (stretch): not built in Phase 7; no performance numbers are claimed.
+- **`trust proxy` and a CSP for the served app:** Phase 8, with Caddy (D35).
